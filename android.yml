@@ -1,0 +1,77 @@
+name: Build EduVault APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      site_repo:
+        description: "Dépôt du site EduVault"
+        default: "exotiice/eduvault"
+      site_ref:
+        description: "Branche du site"
+        default: "main"
+  push:
+    branches: [main]
+    paths-ignore: ["README.md"]
+
+permissions:
+  contents: write   # pour publier l'APK dans « Releases »
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Code de l'application Android
+        uses: actions/checkout@v4
+
+      - name: Code du site EduVault (embarqué dans l'APK)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.site_repo || 'exotiice/eduvault' }}
+          ref: ${{ inputs.site_ref || 'main' }}
+          path: site
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Dépendances
+        run: npm ci
+
+      - name: Préparer le site (injection de la couche native)
+        run: node scripts/prepare-web.mjs site
+
+      - name: Synchroniser Capacitor
+        run: npx cap sync android
+
+      - name: Construire l'APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace -Pvc=${{ github.run_number }}
+
+      - name: Nommer l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk EduVault.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EduVault-apk
+          path: EduVault.apk
+
+      - name: Publier dans Releases (lien de téléchargement direct)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" EduVault.apk \
+            --title "EduVault APK #${{ github.run_number }}" \
+            --notes "Site : ${{ inputs.site_repo || 'exotiice/eduvault' }}@${{ inputs.site_ref || 'main' }}. Installe EduVault.apk sur ton téléphone (autoriser les sources inconnues)." \
+            --prerelease \
+          || gh release upload "build-${{ github.run_number }}" EduVault.apk --clobber

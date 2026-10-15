@@ -1,0 +1,5 @@
+node_modules/
+www/
+site/
+*.apk
+.DS_Store

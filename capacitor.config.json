@@ -1,0 +1,24 @@
+{
+  "appId": "com.exotiice.eduvault",
+  "appName": "EduVault",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": ["*.firebaseapp.com", "accounts.google.com", "*.googleapis.com"]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#fbf9f5"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#fbf9f5",
+      "showSpinner": false
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_eduvault",
+      "iconColor": "#c2410c"
+    }
+  }
+}
