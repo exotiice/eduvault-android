@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="@drawable/widget_bg">
+    <TextView android:id="@+id/hd2" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Échéances" android:textColor="@color/ev_accent" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"/>
+    <LinearLayout android:id="@+id/t1" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginTop="6dp" android:visibility="gone">
+        <TextView android:id="@+id/t1t" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_text" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/t1s" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_muted" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/t2" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginTop="6dp" android:visibility="gone">
+        <TextView android:id="@+id/t2t" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_text" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/t2s" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_muted" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/t3" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginTop="6dp" android:visibility="gone">
+        <TextView android:id="@+id/t3t" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_text" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/t3s" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_muted" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/t4" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginTop="6dp" android:visibility="gone">
+        <TextView android:id="@+id/t4t" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_text" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/t4s" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/ev_muted" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:textColor="@color/ev_muted" android:textSize="13sp" android:visibility="gone"/>
+    <TextView android:id="@+id/ft" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:textColor="@color/ev_accent" android:textSize="12sp" android:textStyle="bold" android:visibility="gone"/>
+</LinearLayout>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ev_bg">#FBF9F5</color>
+    <color name="ev_text">#1C1917</color>
+    <color name="ev_muted">#78716C</color>
+    <color name="ev_accent">#C2410C</color>
+    <color name="ev_line">#E7E5E4</color>
+</resources>

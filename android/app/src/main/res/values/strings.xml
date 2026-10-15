@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EduVault</string>
+    <string name="title_activity_main">EduVault</string>
+    <string name="package_name">com.exotiice.eduvault</string>
+    <string name="custom_url_scheme">com.exotiice.eduvault</string>
+</resources>
