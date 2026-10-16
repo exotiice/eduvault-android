@@ -5,4 +5,8 @@
     <color name="ev_muted">#78716C</color>
     <color name="ev_accent">#C2410C</color>
     <color name="ev_line">#E7E5E4</color>
+    <color name="ag_bg">#F1F3F9</color>
+    <color name="ag_text">#1C1B1F</color>
+    <color name="ag_muted">#5F6368</color>
+    <color name="ag_accent">#3B6CF6</color>
 </resources>

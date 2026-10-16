@@ -37,6 +37,9 @@ final class WidgetData {
             for (int id : m.getAppWidgetIds(new ComponentName(c, TodayWidget.class))) {
                 TodayWidget.update(c, m, id);
             }
+            for (int id : m.getAppWidgetIds(new ComponentName(c, AgendaWidget.class))) {
+                AgendaWidget.update(c, m, id);
+            }
             for (int id : m.getAppWidgetIds(new ComponentName(c, TasksWidget.class))) {
                 TasksWidget.update(c, m, id);
             }

@@ -84,6 +84,7 @@ Appui long sur l'écran d'accueil > **Widgets** > **EduVault** :
 | Widget | Contenu |
 |---|---|
 | **Aujourd'hui** | les cours restants de la journée (● = en cours), salle |
+| **Agenda** | style Google Agenda : cours restants du jour puis des jours suivants, en pastilles aux couleurs de tes modules (le « + » ouvre l'appli) |
 | **Échéances** | prochains examens 🚨 / devoirs 📝 (« Dans 2 j »), et le nombre de fiches à réviser |
 
 Comment ça marche : à chaque modification, le site envoie un petit résumé (8 jours de cours, 8 échéances) au widget.
@@ -143,7 +144,7 @@ scripts/prepare-web.mjs   copie le site dans www/ + injecte native/*.js
 android/…/EduWidgetPlugin.java   plugin Capacitor (site → widgets)
 android/…/EduGooglePlugin.java   connexion Google native (API Authorization de Play Services)
 android/…/EduSharePlugin.java    réception des partages Android (SEND / SEND_MULTIPLE)
-android/…/TodayWidget.java, TasksWidget.java, WidgetData.java   les widgets
+android/…/TodayWidget.java, AgendaWidget.java, TasksWidget.java, WidgetData.java   les widgets
 .github/workflows/android.yml    build de l'APK
 ```
 

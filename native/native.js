@@ -129,7 +129,8 @@
       var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i), k = iso(d);
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
-        return { s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '' };
+        var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
+        return { s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '' };
       });
     }
     var tasks = A.tasks.filter(function (t) {
