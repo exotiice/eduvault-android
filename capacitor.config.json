@@ -4,7 +4,11 @@
   "webDir": "www",
   "server": {
     "androidScheme": "https",
-    "allowNavigation": ["*.firebaseapp.com", "accounts.google.com", "*.googleapis.com"]
+    "allowNavigation": [
+      "*.firebaseapp.com",
+      "accounts.google.com",
+      "*.googleapis.com"
+    ]
   },
   "android": {
     "allowMixedContent": false,
@@ -19,6 +23,13 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_eduvault",
       "iconColor": "#c2410c"
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
     }
   }
 }

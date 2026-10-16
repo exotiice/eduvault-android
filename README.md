@@ -2,7 +2,8 @@
 
 Application Android **native** (APK) pour le site EduVault, construite avec **Capacitor** :
 elle embarque le code du site (donc **toutes** les fonctions, y compris le chiffrement AES-GCM) et y ajoute
-du code natif : **widgets sur l'écran d'accueil**, **rappels natifs** (même appli fermée), bouton retour Android,
+du code natif : **widgets sur l'écran d'accueil**, **rappels natifs** (même appli fermée), **connexion Google native
+(Drive + Agenda)**, **notifications push (FCM)**, **dictée vocale**, **« Partager vers EduVault »**, bouton retour Android,
 export de fichiers via le menu Partager d'Android.
 
 Les données sont les **mêmes que sur le site** (Firebase `eduvault-22224`) : tu te connectes avec le même compte.
@@ -42,6 +43,40 @@ Dans l'appli, le site tourne sur l'adresse **`https://localhost`** (c'est normal
 - Si un jour tu actives **App Check (reCAPTCHA v3)** : il ne marchera pas dans l'appli tel quel
   (il faudra le fournisseur Play Integrity). Laisse `APPCHECK_KEY` vide tant que l'appli est utilisée.
 
+### 2 bis. Google Drive + Google Agenda (connexion native) : à faire UNE fois
+
+Google interdit la connexion OAuth dans un WebView : l'appli utilise donc la connexion Google d'Android.
+Elle a besoin d'un **client OAuth de type Android** dans le **même projet Google Cloud** que ton client Web
+(celui du `CLIENT_ID` du site) :
+
+1. Google Cloud Console > **APIs & Services > Credentials > Create credentials > OAuth client ID**
+2. Type : **Android**
+3. Nom du package : `com.exotiice.eduvault`
+4. Empreinte SHA-1 : `19:DB:AD:22:EB:60:78:BF:43:24:99:67:E0:5D:8E:92:C4:E5:F7:4C`
+   (c'est celle de `android/app/debug.keystore`, la clé qui signe l'APK)
+5. Les API **Google Drive** et **Google Calendar** doivent être activées (déjà fait pour le site).
+   Si l'écran de consentement est en mode « Test », ton compte doit être dans « Utilisateurs de test ».
+
+Aucune clé à copier dans le code. Ensuite, dans l'appli : ☁️ (Drive) et Réglages > Google Agenda fonctionnent comme sur le site.
+Si tu vois **« DEVELOPER_ERROR (10) »** : le client Android est absent, ou le package / SHA-1 ne correspond pas.
+Les fichiers « sur cet appareil » sont alors copiés dans ton Drive depuis l'appli, comme sur le site.
+
+### 2 ter. Notifications push (FCM) : facultatif
+
+1. Firebase console (projet `eduvault-22224`) > ⚙️ Paramètres du projet > **Ajouter une appli > Android**,
+   package `com.exotiice.eduvault` > télécharge **`google-services.json`**.
+2. Mets-le dans le dépôt GitHub de l'appli. Deux façons :
+   - **secret** (recommandé) : Settings > Secrets and variables > Actions > **New repository secret** nommé
+     `GOOGLE_SERVICES_JSON`, valeur = tout le contenu du fichier ;
+   - ou fichier **`android/app/google-services.json`** committé.
+3. Relance le build. Dans l'appli : 🔔 Annonces > **Activer**.
+Sans ce fichier, le bouton affiche « Push non configuré dans cet APK » (rien ne plante).
+
+⚠️ Ton script qui envoie les annonces doit envoyer un message avec un bloc **`notification`** (`title` + `body`) :
+Android n'affiche pas tout seul un message « data seulement » quand l'appli est fermée.
+Le jeton de l'appli est enregistré dans `tokens/{uid}` (comme sur le site : un seul appareil par compte,
+le dernier qui active les annonces gagne).
+
 ## 3. Widgets
 
 Appui long sur l'écran d'accueil > **Widgets** > **EduVault** :
@@ -72,13 +107,13 @@ Les 7 prochains jours sont programmés à l'avance (donc ça marche appli fermé
 | Export `.ics` / sauvegarde `.json` / fichiers | ✅ via le menu **Partager** d'Android |
 | Liens externes | ✅ ouverts dans le navigateur |
 | Photos de notes (appareil photo) | ✅ |
-| **Google Drive** (copie des fichiers) et **Google Agenda** (synchro) | ❌ pas encore : Google bloque la connexion OAuth dans un WebView. Il faudra une connexion Google native (étape suivante). Le bouton ☁️ est masqué. |
-| Notifications push d'annonces (FCM) | ❌ pas encore (nécessite `google-services.json`) |
-| Dictée vocale 🎤 | ❌ non supportée par le WebView Android (la lecture vocale 🔊/🎧 marche) |
-| « Partager vers EduVault » | ❌ pas encore |
+| **Google Drive** (copie des fichiers) et **Google Agenda** | ✅ connexion Google native (voir §2 bis) |
+| Notifications push d'annonces (FCM) | ✅ avec `google-services.json` (voir §2 ter) |
+| Dictée vocale 🎤 | ✅ via la reconnaissance vocale de Google (micro à autoriser ; Android coupe à chaque pause, l'appli relance toute seule) |
+| « Partager vers EduVault » | ✅ depuis n'importe quelle appli : Partager > EduVault (PDF, images, texte, liens) ; l'appli propose le module et la catégorie |
 
 ⚠️ **Fichiers (PDF…) « sur cet appareil »** : ils sont stockés dans l'appli. **Désinstaller l'appli les efface**
-(les données Firebase, elles, sont gardées). Sans Drive dans l'appli, garde une copie ailleurs de tes fichiers importants.
+(les données Firebase, elles, sont gardées). Active Drive (☁️) pour qu'ils soient aussi copiés dans ton Google Drive.
 
 ## 6. Mettre à jour
 
@@ -86,8 +121,8 @@ Les 7 prochains jours sont programmés à l'avance (donc ça marche appli fermé
   Relance **Actions > Build EduVault APK > Run workflow** pour obtenir un nouvel APK. Les *données* Firebase,
   elles, sont toujours en direct.
 - Le workflow récupère le site sur `exotiice/eduvault` (branche `main`) ; modifiable dans « Run workflow ».
-- Le site n'est **jamais modifié** : toute la couche native est dans `native/` et injectée au build
-  (`scripts/prepare-web.mjs`). Si une fonction du site change de nom, la couche native se désactive proprement
+- Le site n'est **jamais modifié sur disque** : toute la couche native est dans `native/` et injectée au build
+  (`scripts/prepare-web.mjs`, qui ajoute aussi une ligne `window.__shareDlg=shareDlg;` dans la copie embarquée). Si une fonction du site change de nom, la couche native se désactive proprement
   (tout est protégé par `try/catch`).
 
 ## 7. Développement local (facultatif)
@@ -102,10 +137,12 @@ npx cap sync android
 ## 8. Structure
 
 ```
-native/head.js      avant le site : désactive le service worker, flux ENIAD en ligne
-native/native.js    après le site : widgets, rappels, retour, export, liens, barre d'état
+native/head.js      avant le site : service worker off, flux ENIAD, dictée vocale (webkitSpeechRecognition), faux google.accounts (Agenda)
+native/native.js    après le site : Drive natif, push, partage, widgets, rappels, retour, export, liens, barre d'état
 scripts/prepare-web.mjs   copie le site dans www/ + injecte native/*.js
 android/…/EduWidgetPlugin.java   plugin Capacitor (site → widgets)
+android/…/EduGooglePlugin.java   connexion Google native (API Authorization de Play Services)
+android/…/EduSharePlugin.java    réception des partages Android (SEND / SEND_MULTIPLE)
 android/…/TodayWidget.java, TasksWidget.java, WidgetData.java   les widgets
 .github/workflows/android.yml    build de l'APK
 ```
