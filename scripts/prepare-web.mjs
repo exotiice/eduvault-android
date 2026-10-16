@@ -38,6 +38,12 @@ if (html.includes('data-eduvault-native')) {
   console.error('index.html contient déjà la couche native : utilise le site d\'origine.');
   process.exit(1);
 }
+// Le site garde shareDlg() dans une fonction fermée : on l'expose (le site d'origine n'est pas modifié sur disque).
+// Si le motif change, la couche native recharge la page à la place (voir native.js, showShare).
+const anchor = '\nbootShareGo();';
+if (html.includes(anchor)) html = html.replace(anchor, anchor + 'window.__shareDlg=shareDlg;');
+else console.warn('bootShareGo() introuvable : « Partager vers EduVault » utilisera le rechargement de secours');
+
 const hi = html.search(/<head[^>]*>/i);
 const hm = html.match(/<head[^>]*>/i);
 if (hi < 0) { console.error('<head> introuvable'); process.exit(1); }

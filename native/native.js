@@ -9,20 +9,33 @@
   window.__NATIVE = true;
   document.documentElement.classList.add('native');
 
-  var P = function (n) { return (C && C.Plugins && C.Plugins[n]) || null; };
+  var P = function (n) {
+    try { if (C && C.Plugins && C.Plugins[n]) return C.Plugins[n]; } catch (e) {}
+    try { if (C && C.registerPlugin) return C.registerPlugin(n); } catch (e) {}
+    return null;
+  };
   var safe = function (f) { try { return f(); } catch (e) { try { console.warn('[native]', e); } catch (_) {} } };
   var LSget = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
   var LSset = function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
 
-  /* ---------- styles : pas de bouton Drive/Google (non disponibles dans l'app, voir README) ---------- */
-  safe(function () {
-    var st = document.createElement('style');
-    st.textContent = 'html.native #dv{display:none!important}';
-    document.head.appendChild(st);
-  });
+  /* ---------- Google Drive + Google Agenda : connexion native (Google bloque OAuth dans un WebView) ----------
+     Drive : on remplace drvAuth() du site (même effet : jeton mis dans tok). Agenda : le code du site est dans une
+     fonction fermée, donc head.js fournit un faux google.accounts.oauth2 qui appelle le même plugin.
+     Le jeton vient de l'API Authorization de Google Play Services (plugin EduGoogle), silencieux si déjà accordé. */
+  function gToken(scope) {
+    var G = P('EduGoogle');
+    if (!G) return Promise.reject(new Error('Connexion Google indisponible dans cette version'));
+    return G.authorize({ scope: scope }).catch(function (e) { throw new Error((e && e.message) || String(e)); });
+  }
   safe(function () {
     window.drvAuth = function () {
-      return Promise.reject(new Error("Google Drive n'est pas encore disponible dans l'application Android"));
+      return gToken(SCOPE).then(function (r) {
+        tok = r.accessToken;
+        for (var k in DRVF) delete DRVF[k];
+        clearTimeout(tokT);
+        tokT = setTimeout(function () { tok = null; paintDrive(); armReconnect(); }, ((+r.expiresIn || 3300) - 90) * 1000);
+        LS(LK(), '1'); drvErr = ''; paintDrive();
+      });
     };
   });
 
@@ -189,6 +202,142 @@
       }).catch(function () { lastNotif = ''; });
     });
   }
+
+  /* ---------- notifications push (FCM) : annonces même appli fermée ---------- */
+  var PN = P('PushNotifications'), lastTok = '', tokWaiters = [], hasFb = null;
+  function firebaseConfigured() {
+    if (hasFb !== null) return Promise.resolve(hasFb);
+    var G = P('EduGoogle');
+    if (!G || !G.hasFirebase) return Promise.resolve(false);
+    return G.hasFirebase().then(function (r) { hasFb = !!(r && r.value); return hasFb; }).catch(function () { return false; });
+  }
+  function fbReady() { return typeof fb !== 'undefined' && fb && typeof fbUser !== 'undefined' && fbUser; }
+  function saveToken(t) {
+    return fb.db.collection('tokens').doc(fbUser.uid).set({ t: t, ts: Date.now(), ua: 'EduVault Android' });
+  }
+  safe(function () {
+    if (!PN) return;
+    PN.addListener('registration', function (t) {
+      lastTok = (t && t.value) || '';
+      var w = tokWaiters; tokWaiters = [];
+      w.forEach(function (f) { f.ok(lastTok); });
+      if (lastTok && LSget('eduVault_push') === '1' && fbReady()) saveToken(lastTok).catch(function () {});
+    });
+    PN.addListener('registrationError', function (e) {
+      var w = tokWaiters; tokWaiters = [];
+      w.forEach(function (f) { f.ko(new Error((e && e.error) || 'Enregistrement FCM impossible')); });
+    });
+    PN.addListener('pushNotificationReceived', function (n) {
+      safe(function () { toast('🔔 ' + ((n && n.title) || 'EduVault') + (n && n.body ? ' — ' + n.body : '')); });
+      safe(function () { if (typeof annCheck === 'function') annCheck(); });
+    });
+    PN.addListener('pushNotificationActionPerformed', function () {
+      safe(function () { if (typeof annCheck === 'function') annCheck(); });
+    });
+  });
+  function getPushToken() {
+    return new Promise(function (ok, ko) {
+      tokWaiters.push({ ok: ok, ko: ko });
+      PN.register().catch(ko);
+      setTimeout(function () { ko(new Error('Délai dépassé : pas de jeton FCM (vérifie la connexion)')); }, 20000);
+    });
+  }
+  safe(function () {
+    window.pushEnable = function () {
+      if (!PN) return Promise.resolve(toast('Notifications indisponibles', 'er'));
+      return firebaseConfigured().then(function (okFb) {
+        if (!okFb) return toast(Lg('Push non configuré dans cet APK : ajoute google-services.json (voir README §2 ter).', 'Push not configured in this APK: add google-services.json (see README §2 ter).', 'الإشعارات غير مهيأة في هذا التطبيق (راجع README)'), 'er');
+        return needFb().then(function (ready) {
+          if (!ready) return;
+          return PN.checkPermissions().then(function (p) { return p.receive === 'granted' ? p : PN.requestPermissions(); }).then(function (p) {
+            if (p.receive !== 'granted') return toast(Lg('Permission refusée', 'Permission denied', 'تم رفض الإذن'), 'er');
+            return PN.createChannel({ id: 'eduvault', name: 'Rappels EduVault', description: 'Annonces, cours et échéances', importance: 4, visibility: 1 }).catch(function () {})
+              .then(function () { return getPushToken(); })
+              .then(function (t) { return saveToken(t); })
+              .then(function () { LS('eduVault_push', '1'); toast(Lg('Annonces activées ✔', 'Announcements enabled ✔', 'تم تفعيل الإعلانات ✔'), 'ok'); pushDlg(); });
+          });
+        });
+      }).catch(function (e) { toast(typeof shErr === 'function' ? shErr(e) : String(e && e.message || e), 'er'); });
+    };
+    /* le WebView n'a pas l'API Notification : on remplace la boîte de dialogue (l'état vient de notre réglage) */
+    window.pushDlg = function () {
+      var on = LS('eduVault_push') === '1';
+      dlgShow('<h3>🔔 ' + Lg('Annonces', 'Announcements', 'الإعلانات') + '</h3><p class="mu">' +
+        Lg("Reçois les annonces importantes (examen reporté, salle changée…) même quand l'appli est fermée.", 'Receive important announcements (exam postponed, room changed…) even when the app is closed.', 'استقبل الإعلانات المهمة حتى عندما يكون التطبيق مغلقا.') +
+        '</p><small class="mu">' + Lg('État', 'Status', 'الحالة') + ' : ' + (on ? '✅ ' + Lg('activées', 'enabled', 'مفعّلة') : '⚪ ' + Lg('désactivées', 'disabled', 'معطلة')) + '</small>' +
+        '<div class="row"><button class="b p" data-a="pushOn">' + Lg('Activer', 'Enable', 'تفعيل') + '</button><button class="b" data-a="pushOff">' + Lg('Désactiver', 'Disable', 'تعطيل') + '</button></div>' + closeBtn());
+    };
+  });
+  /* au démarrage : si les annonces sont activées, on rafraîchit le jeton FCM (il peut changer) */
+  safe(function () {
+    if (!PN || LSget('eduVault_push') !== '1') return;
+    var tries = 0, iv = setInterval(function () {
+      if (++tries > 40) return clearInterval(iv);
+      if (!fbReady()) return;
+      clearInterval(iv);
+      firebaseConfigured().then(function (okFb) { if (okFb) PN.register().catch(function () {}); });
+    }, 3000);
+  });
+
+  /* ---------- « Partager vers EduVault » : fichiers/texte reçus d'autres applis ---------- */
+  function readFileBlob(it) {
+    return fetch(C.convertFileSrc('file://' + it.path)).then(function (r) {
+      if (!r.ok) throw new Error('lecture ' + r.status);
+      return r.blob();
+    }).catch(function () {
+      var FS = P('Filesystem');
+      if (!FS) throw new Error('lecture impossible');
+      return FS.readFile({ path: 'file://' + it.path }).then(function (r) {
+        var bin = atob(r.data), u = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        return new Blob([u], { type: it.type || 'application/octet-stream' });
+      });
+    });
+  }
+  /* shareDlg() est dans une fonction fermée du site : prepare-web.mjs l'expose (window.__shareDlg).
+     Sinon (site modifié) : on recharge la page une fois, le site propose alors lui-même l'import au démarrage. */
+  function showShare() {
+    safe(function () {
+      var f = window.__shareDlg || (typeof shareDlg === 'function' ? shareDlg : null);
+      if (f) return f();
+      if (sessionStorage.getItem('eduVault_shareReload') !== '1') { sessionStorage.setItem('eduVault_shareReload', '1'); location.reload(); }
+    });
+  }
+  var draining = false;
+  function drainShare() {
+    var SH = P('EduShare');
+    if (!SH || !window.caches || draining) return;
+    draining = true;
+    SH.getPending().then(function (r) {
+      var items = (r && r.items) || [];
+      if (!items.length) return;
+      return caches.open('eduvault-share').then(function (c) {
+        var t = Date.now(), n = 0, paths = [];
+        return items.reduce(function (p, it) {
+          return p.then(function () {
+            if (it.path) {
+              return readFileBlob(it).then(function (b) {
+                paths.push(it.path);
+                return c.put(new Request('shared/' + t + '-' + (n++)), new Response(b, { headers: { 'Content-Type': it.type || b.type || 'application/octet-stream', 'X-Name': encodeURIComponent(it.name || 'fichier') } }));
+              });
+            }
+            return c.put(new Request('shared/' + t + '-' + (n++) + '-t'), new Response(JSON.stringify({ title: it.title || '', text: it.text || '', url: '' }), { headers: { 'Content-Type': 'application/json', 'X-Kind': 'text' } }));
+          });
+        }, Promise.resolve()).then(function () {
+          if (paths.length) SH.clear({ paths: paths }).catch(function () {});
+          setTimeout(function () { showShare(); }, 800);
+        });
+      });
+    }).catch(function (e) { safe(function () { toast('Partage impossible : ' + (e && e.message || e), 'er'); }); })
+      .then(function () { draining = false; });
+  }
+  safe(function () {
+    var SH = P('EduShare');
+    if (SH && SH.addListener) SH.addListener('shared', function () { setTimeout(drainShare, 300); });
+    var App = P('App');
+    if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainShare, 500); });
+    setTimeout(drainShare, 1500);
+  });
 
   var tm = null;
   function sched() { clearTimeout(tm); tm = setTimeout(function () { pushWidget(); scheduleNotifs(); }, 2500); }
