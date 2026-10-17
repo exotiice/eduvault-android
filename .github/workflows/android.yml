@@ -41,7 +41,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      - name: Licences Android SDK (le SDK est déjà installé sur le runner)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Configuration Firebase pour le push (facultatif)
         env:
