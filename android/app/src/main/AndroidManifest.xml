@@ -49,6 +49,7 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_agenda_info" />
         </receiver>
+        <service android:name=".AgendaService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false" />
         <receiver android:name=".TasksWidget" android:exported="false" android:label="EduVault · Échéances">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

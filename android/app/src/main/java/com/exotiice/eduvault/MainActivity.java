@@ -14,12 +14,14 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(EduSharePlugin.class);
         super.onCreate(savedInstanceState);
         EduSharePlugin.handle(getApplicationContext(), getIntent());
+        EduWidgetPlugin.handle(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         EduSharePlugin.handle(getApplicationContext(), intent);
+        EduWidgetPlugin.handle(intent);
     }
 
     @Override

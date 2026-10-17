@@ -130,13 +130,13 @@
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
         var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
-        return { s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '' };
+        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '' };
       });
     }
     var tasks = A.tasks.filter(function (t) {
       return !t.completed && t.type !== 'review' && new Date(t.dueDate).getTime() > Date.now() - 864e5;
     }).sort(function (a, b) { return new Date(a.dueDate) - new Date(b.dueDate); }).slice(0, 8).map(function (t) {
-      return { t: new Date(t.dueDate).getTime(), n: t.title, m: modName(t.moduleId), x: t.type === 'exam' ? 1 : 0 };
+      return { i: t.id, t: new Date(t.dueDate).getTime(), n: t.title, m: modName(t.moduleId), x: t.type === 'exam' ? 1 : 0 };
     });
     var cards = A.flashcards.filter(function (f) { return ids.has(f.moduleId) && (!f.nextRev || f.nextRev <= Date.now()); }).length;
     return { u: Date.now(), days: days, hol: hol, tasks: tasks, cards: cards };
@@ -338,6 +338,96 @@
     var App = P('App');
     if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainShare, 500); });
     setTimeout(drainShare, 1500);
+  });
+
+  /* ---------- appui sur le widget Agenda : fiche de la séance / de l'échéance ---------- */
+  function relTxt(ms) {
+    var m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + ' min';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + ' h' + (m % 60 ? ' ' + (m % 60 < 10 ? '0' : '') + (m % 60) : '');
+    return Math.round(h / 24) + ' j';
+  }
+  function dayLong(iso) {
+    try { return new Date(iso + 'T00:00').toLocaleDateString(LOC(), { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { return iso; }
+  }
+  function infoClose() { try { $('dlg').close(); } catch (e) {} }
+  function showSession(a) {
+    var c = A.timetable.find(function (x) { return x.id === a.i; });
+    if (!c) { go('ag'); return; }
+    var m = A.modules.find(function (x) { return x.id === c.moduleId; }) || {};
+    var st = new Date(a.d + 'T' + c.startTime), en = new Date(a.d + 'T' + c.endTime), now = Date.now();
+    var state = now < st ? '⏳ ' + Lg('Commence dans ', 'Starts in ', 'تبدأ بعد ') + relTxt(st - now)
+      : now < en ? '● ' + Lg('En cours · reste ', 'In progress · ', 'جارية · ') + relTxt(en - now)
+      : '✔ ' + Lg('Terminée', 'Finished', 'انتهت');
+    var tasks = A.tasks.filter(function (t) { return t.moduleId === c.moduleId && !t.completed && t.type !== 'review'; })
+      .sort(function (x, y) { return new Date(x.dueDate) - new Date(y.dueDate); }).slice(0, 3);
+    var cards = A.flashcards.filter(function (f) { return f.moduleId === c.moduleId && (!f.nextRev || f.nextRev <= Date.now()); }).length;
+    var rows = [
+      '🗓 ' + esc(dayLong(a.d)),
+      '⏰ ' + esc(c.startTime + ' – ' + c.endTime) + (c.room ? ' · 📍 ' + esc(c.room) : ''),
+      m.prof ? '👤 ' + esc(m.prof) : '',
+      (c.week && c.week !== 'all') ? '🔁 ' + Lg('Semaine ', 'Week ', 'الأسبوع ') + esc(c.week) : '',
+      m.absences ? '🚫 ' + m.absences + ' ' + Lg('absence(s)', 'absence(s)', 'غياب') : ''
+    ].filter(Boolean).map(function (r) { return '<div>' + r + '</div>'; }).join('');
+    var extra = '';
+    if (tasks.length) {
+      extra += '<small class="mu" style="display:block;margin-top:8px">' + Lg('Prochaines échéances', 'Upcoming deadlines', 'المواعيد القادمة') + '</small>' +
+        tasks.map(function (t) { return '<div>' + (t.type === 'exam' ? '🚨 ' : '📝 ') + esc(t.title) + ' <small class="mu">· ' + Lg('dans ', 'in ', 'بعد ') + relTxt(new Date(t.dueDate) - now) + '</small></div>'; }).join('');
+    }
+    if (cards) extra += '<div style="margin-top:6px">🧠 ' + cards + ' ' + Lg('fiche(s) à réviser', 'card(s) to review', 'بطاقة للمراجعة') + '</div>';
+    dlgShow('<h3 style="color:' + esc(m.color || 'inherit') + '">📚 ' + esc(modName(c.moduleId)) + '</h3>' +
+      '<div class="rs" style="display:block;margin:8px 0"><b>' + state + '</b><div style="margin-top:6px">' + rows + '</div></div>' + extra +
+      '<div class="row" style="margin-top:10px;justify-content:flex-start;flex-wrap:wrap">' +
+      '<button class="b p" data-a="evGo" data-i="fc">🧠 ' + Lg('Fiches', 'Cards', 'البطاقات') + '</button>' +
+      '<button class="b" data-a="evGo" data-i="mo">📖 ' + Lg('Modules', 'Modules', 'المواد') + '</button>' +
+      '<button class="b" data-a="editCls" data-i="' + esc(c.id) + '">✏️ ' + Lg('Modifier', 'Edit', 'تعديل') + '</button></div>' + closeBtn());
+  }
+  function showTask(a) {
+    var t = A.tasks.find(function (x) { return x.id === a.i; });
+    if (!t) { go('da'); return; }
+    var due = new Date(t.dueDate), now = Date.now(), over = due.getTime() < now;
+    dlgShow('<h3>' + (t.type === 'exam' ? '🚨 ' : '📝 ') + esc(t.title) + '</h3>' +
+      '<div class="rs" style="display:block;margin:8px 0"><b>' + (over ? '⚠️ ' + Lg('En retard de ', 'Overdue by ', 'متأخر بـ ') + relTxt(now - due) : '⏳ ' + Lg('Dans ', 'In ', 'بعد ') + relTxt(due - now)) + '</b>' +
+      '<div style="margin-top:6px">📚 ' + esc(modName(t.moduleId)) + '</div>' +
+      '<div>🗓 ' + esc(due.toLocaleDateString(LOC(), { weekday: 'long', day: 'numeric', month: 'long' })) + ' · ' + esc(due.toTimeString().slice(0, 5)) + '</div></div>' +
+      '<div class="row" style="justify-content:flex-start;flex-wrap:wrap">' +
+      '<button class="b p" data-a="evDone" data-i="' + esc(t.id) + '">✔ ' + Lg('Terminé', 'Done', 'تم') + '</button>' +
+      '<button class="b" data-a="editTask" data-i="' + esc(t.id) + '">✏️ ' + Lg('Modifier', 'Edit', 'تعديل') + '</button></div>' + closeBtn());
+  }
+  function showAdd() {
+    dlgShow('<h3>➕ ' + Lg('Ajouter', 'Add', 'إضافة') + '</h3><div class="row" style="justify-content:flex-start;flex-wrap:wrap">' +
+      '<button class="b p" data-a="evAddCls">🕒 ' + Lg('Séance', 'Class', 'حصة') + '</button>' +
+      '<button class="b p" data-a="evAddTask">📝 ' + Lg('Échéance', 'Deadline', 'موعد') + '</button></div>' + closeBtn());
+  }
+  safe(function () {
+    Object.assign(act, {
+      evGo: function (i) { infoClose(); go(i); },
+      evDone: function (i) { act.done(i); infoClose(); setTimeout(pushWidget, 800); },
+      evAddCls: function () { infoClose(); act.addCls(); },
+      evAddTask: function () { infoClose(); act.addTask(); }
+    });
+  });
+  var acting = false;
+  function drainAction() {
+    var W = P('EduWidget');
+    if (!W || !W.getAction || acting) return;
+    acting = true;
+    W.getAction().then(function (r) {
+      var a = null; try { a = r && r.action ? JSON.parse(r.action) : null; } catch (e) {}
+      if (!a) return;
+      if (!A.settings.level) return;   // pas encore configuré
+      if (a.k === 's') showSession(a);
+      else if (a.k === 't') showTask(a);
+      else if (a.k === 'add') showAdd();
+    }).catch(function () {}).then(function () { acting = false; });
+  }
+  safe(function () {
+    var W = P('EduWidget');
+    if (W && W.addListener) W.addListener('widgetAction', function () { setTimeout(drainAction, 200); });
+    var App = P('App');
+    if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainAction, 400); });
+    setTimeout(drainAction, 1800);
   });
 
   var tm = null;
