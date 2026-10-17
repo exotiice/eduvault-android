@@ -100,6 +100,17 @@ Les semaines A/B et les vacances sont respectées.
 - échéances : 1 h avant, et la veille à 18 h.
 Les 7 prochains jours sont programmés à l'avance (donc ça marche appli fermée) et recalculés à chaque modification.
 
+## 4 bis. Mode cours (Réglages du site → « 🎓 Mode cours »)
+
+| Fonction | Ce que ça fait | Permission |
+|---|---|---|
+| 🔕 Silence | « Ne pas déranger » (alarmes et favoris restent audibles) pendant chaque cours ; restauré à la fin. Sans accès DND : simple vibreur. | Accès « Ne pas déranger » (bouton Autoriser dans le dialogue) |
+| 🎵 Carte du cours | Notification style lecteur de musique (écran verrouillé) : cours, salle, barre de progression, boutons Notes / Silence / Stop | Notifications |
+| 📊 Bilan | À la fin du cours : « Tu as compris combien ? » 30 / 60 / 100 %. Le résultat est ajouté aux notes du cours (`📊 17/10 · Compris 60 %`) et la moyenne par module s'affiche dans le dialogue | Notifications |
+| ⏰ Réveil | Le soir (heure réglable), si aucune alarme n'est réglée avant le 1er cours de demain : notification avec bouton « Régler l'alarme » (1er cours − X min) | Alarmes exactes |
+
+Limites honnêtes : Android n'autorise pas une appli à créer une alarme sans le tap de l'utilisateur (le bouton ouvre l'horloge pré-remplie) ; l'aspect de la carte écran verrouillé varie selon la version/marque d'Android ; le code Java n'a pas pu être compilé dans l'environnement de développement : si le build échoue, envoyer l'erreur.
+
 ## 5. Différences avec le site
 
 | Fonction | Dans l'appli |

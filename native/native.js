@@ -440,6 +440,108 @@
     setTimeout(drainAction, 1800);
   });
 
+  /* ================= Mode cours ================= */
+  var MK = 'eduVault_mode';
+  var MDEF = { silent: true, card: true, checkin: true, alarm: true, lead: 90, hour: 21 };
+  function modeGet() {
+    var o = {}, s = {};
+    try { s = JSON.parse(LSget(MK) || '{}') || {}; } catch (e) {}
+    for (var k in MDEF) o[k] = (k in s) ? s[k] : MDEF[k];
+    return o;
+  }
+  function modePush() {
+    var W = P('EduWidget');
+    if (W && W.setPrefs) W.setPrefs({ json: JSON.stringify(modeGet()) }).catch(function () {});
+  }
+  function modeSave(o) { try { LS(MK, JSON.stringify(o)); } catch (e) {} modePush(); }
+  function modeStats() {
+    var out = {};
+    (A.notes || []).forEach(function (n) {
+      var m = String(n.text || '').match(/📊 \d\d\/\d\d · [^\n]*?(\d+) ?%/g);
+      if (!m) return;
+      var c = A.timetable.find(function (x) { return x.id === n.classId; });
+      if (!c) return;
+      var o = out[c.moduleId] || (out[c.moduleId] = { s: 0, n: 0 });
+      m.forEach(function (l) { o.s += +l.match(/(\d+) ?%$/)[1]; o.n++; });
+    });
+    return out;
+  }
+  function modeDlg() {
+    var W = P('EduWidget'), m = modeGet();
+    var row = function (k, ico, t, d) {
+      return '<label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0"><input type="checkbox" data-mk="' + k + '"' + (m[k] ? ' checked' : '') + ' style="width:20px;height:20px;margin-top:2px"><span><b>' + ico + ' ' + t + '</b><br><small class="mu">' + d + '</small></span></label>';
+    };
+    var st = modeStats(), lines = Object.keys(st).map(function (id) {
+      return '<div>' + esc(modName(id)) + ' : <b>' + Math.round(st[id].s / st[id].n) + ' %</b> <small class="mu">(' + st[id].n + ')</small></div>';
+    }).join('');
+    dlgShow('<h3>🎓 ' + Lg('Mode cours', 'Class mode', 'وضع الحصة') + '</h3>' +
+      row('silent', '🔕', Lg('Silence pendant les cours', 'Silent during classes', 'صامت أثناء الحصص'), Lg('Active « Ne pas déranger » au début, le remet à la fin.', 'Turns on Do Not Disturb at start, restores it at the end.', 'يفعّل عدم الإزعاج عند البداية ويعيده عند النهاية.')) +
+      '<div id="mdnd"></div>' +
+      row('card', '🎵', Lg('Carte du cours (écran verrouillé)', 'Class card (lock screen)', 'بطاقة الحصة (شاشة القفل)'), Lg('Style lecteur de musique : cours, salle, heure.', 'Music-player style: class, room, time.', 'على شكل مشغل موسيقى: المادة والقاعة والوقت.')) +
+      row('checkin', '📊', Lg('Bilan après chaque cours', 'Check-in after each class', 'تقييم بعد كل حصة'), Lg('Notification : « Tu as compris combien ? » 30 / 60 / 100 %.', 'Notification: “How much did you understand?” 30 / 60 / 100 %.', 'إشعار: «شحال فهمتي؟» 30 / 60 / 100 %.')) +
+      row('alarm', '⏰', Lg('Aide au réveil', 'Wake-up helper', 'مساعد المنبه'), Lg('Le soir, vérifie ton alarme et propose l\'heure selon le 1er cours.', 'In the evening, checks your alarm and suggests a time from the first class.', 'في المساء يتحقق من المنبه ويقترح وقتا حسب أول حصة.')) +
+      '<div class="row" style="justify-content:flex-start;gap:8px;align-items:center"><span>' + Lg('Me réveiller', 'Wake me', 'أيقظني') + '</span><input id="mlead" type="number" min="30" max="240" step="5" value="' + m.lead + '" style="width:70px"><span>' + Lg('min avant', 'min before', 'دقيقة قبل') + '</span></div>' +
+      '<div class="row" style="justify-content:flex-start;gap:8px;align-items:center"><span>' + Lg('Rappel à', 'Reminder at', 'التذكير على') + '</span><input id="mhour" type="number" min="18" max="23" value="' + m.hour + '" style="width:70px"><span>h</span></div>' +
+      (lines ? '<h4 style="margin:14px 0 4px">📈 ' + Lg('Compréhension moyenne', 'Average understanding', 'متوسط الفهم') + '</h4>' + lines : '') +
+      closeBtn());
+    var d = $('dlg');
+    function read() {
+      var o = modeGet();
+      d.querySelectorAll('[data-mk]').forEach(function (i) { o[i.dataset.mk] = i.checked; });
+      var l = parseInt($('mlead').value, 10), h = parseInt($('mhour').value, 10);
+      if (l >= 30 && l <= 240) o.lead = l;
+      if (h >= 18 && h <= 23) o.hour = h;
+      modeSave(o);
+    }
+    d.querySelectorAll('[data-mk],#mlead,#mhour').forEach(function (i) { i.addEventListener('change', read); });
+    if (W && W.getModeInfo) W.getModeInfo().then(function (r) {
+      var box = $('mdnd');
+      if (!box || r.dnd) return;
+      box.innerHTML = '<div class="rs" style="display:block;margin:0 0 8px">⚠️ ' + Lg('Accès « Ne pas déranger » requis pour le silence automatique.', 'Do Not Disturb access is needed for automatic silence.', 'يلزم إذن «عدم الإزعاج» للصمت التلقائي.') +
+        '<div><button class="b p" id="mdndb">' + Lg('Autoriser', 'Allow', 'السماح') + '</button></div></div>';
+      $('mdndb').onclick = function () { W.openDnd().catch(function () {}); };
+    }).catch(function () {});
+  }
+  /* bilans reçus depuis les notifications → on les écrit dans les notes du cours */
+  function drainRates() {
+    var W = P('EduWidget');
+    if (!W || !W.getRates) return;
+    W.getRates().then(function (r) {
+      var list = (r && r.rates) || [];
+      if (!list.length || !A.settings.level) return;
+      list.forEach(function (x) {
+        var c = A.timetable.find(function (t) { return t.id === x.i; });
+        if (!c) return;
+        var n = A.notes.find(function (z) { return z.classId === x.i; });
+        if (!n) { n = { classId: x.i, text: '', photos: [] }; A.notes.push(n); }
+        var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
+        n.text = (n.text ? n.text + '\n' : '') + '📊 ' + dm + ' · ' + Lg('Compris', 'Understood', 'فهم') + ' ' + x.p + ' %';
+        n.date = new Date().toISOString();
+      });
+      try { upd(); } catch (e) {}
+      toast('📊 ' + Lg('Bilan enregistré', 'Check-in saved', 'تم حفظ التقييم') + ' ✔', 'ok');
+      sched();
+    }).catch(function () {});
+  }
+  safe(function () {
+    var W = P('EduWidget'), App = P('App');
+    act.modeDlg = modeDlg;
+    modePush();
+    if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainRates, 600); });
+    if (W && W.addListener) W.addListener('widgetAction', function () { setTimeout(drainRates, 400); });
+    setTimeout(drainRates, 2500);
+    /* bouton d'accès dans les réglages du site */
+    new MutationObserver(function () {
+      var b = document.querySelector('[data-a="resHub"]');
+      if (b && !document.querySelector('[data-a="modeDlg"]')) {
+        var n = document.createElement('button');
+        n.className = 'b'; n.dataset.a = 'modeDlg';
+        n.textContent = '🎓 ' + Lg('Mode cours', 'Class mode', 'وضع الحصة');
+        b.parentNode.insertBefore(n, b);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+
   var tm = null;
   function sched() { clearTimeout(tm); tm = setTimeout(function () { pushWidget(); scheduleNotifs(); }, 2500); }
 
