@@ -130,6 +130,13 @@ final class ModeScheduler {
                             st.name = cl.optString("n"); st.room = cl.optString("r", ""); st.color = cl.optString("c", "");
                             st.at = Math.max(s, now + 3000L);
                             evs.add(st);
+                            if (p.getBoolean("card", true) && s - ModeReceiver.PRE_MS > now) {
+                                Ev pre = new Ev();
+                                pre.type = "PRE"; pre.id = id; pre.day = day; pre.start = s; pre.end = e;
+                                pre.name = st.name; pre.room = st.room; pre.color = st.color;
+                                pre.at = s - ModeReceiver.PRE_MS;
+                                evs.add(pre);
+                            }
                             Ev en = new Ev();
                             en.type = "END"; en.id = id; en.day = day; en.start = s; en.end = e;
                             en.name = st.name; en.room = st.room; en.color = st.color;

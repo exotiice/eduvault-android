@@ -58,6 +58,9 @@ public class ModeReceiver extends BroadcastReceiver {
             else if ("RATE".equals(t)) onRate(c, i);
             else if ("TOGGLE".equals(t)) onToggle(c);
             else if ("STOP".equals(t)) onStop(c);
+            else if ("PRE".equals(t)) onPre(c);
+            else if ("PREV".equals(t)) onNav(c, -1);
+            else if ("NEXT".equals(t)) onNav(c, 1);
         } catch (Exception ignored) {
             // un rappel ne doit jamais faire planter l'appli
         }
@@ -142,6 +145,7 @@ public class ModeReceiver extends BroadcastReceiver {
                 .putString("card_color", i.getStringExtra("color"))
                 .putLong("card_start", i.getLongExtra("start", 0L))
                 .putLong("card_end", i.getLongExtra("end", 0L))
+                .putInt("view_i", -1)
                 .apply();
         if (p.getBoolean("silent", false)) applySilent(c);
         if (p.getBoolean("card", true)) postCard(c);
@@ -154,11 +158,12 @@ public class ModeReceiver extends BroadcastReceiver {
         long s = i.getLongExtra("start", 0L);
         long e = i.getLongExtra("end", 0L);
         if (id != null && id.equals(p.getString("active_id", ""))) {
+            p.edit().putInt("view_i", -1).apply();
             if (!ModeScheduler.nextStartWithin(c, e, 10 * 60000L)) {
                 restoreSilent(c);
-                cancelCard(c);
                 p.edit().remove("active_id").apply();
             }
+            postLive(c); // montre le prochain cours s'il commence dans moins de 30 min, sinon retire la carte
         }
         if (p.getBoolean("checkin", true) && e - s >= 30 * 60000L) {
             postCheckin(c, id, i.getStringExtra("day"), i.getStringExtra("name"));
@@ -186,40 +191,130 @@ public class ModeReceiver extends BroadcastReceiver {
         return new SimpleDateFormat("HH:mm", Locale.FRENCH).format(new Date(ms));
     }
 
-    /** Carte « lecteur » (comme Spotify) : titre = cours, barre de progression, 3 boutons. */
+    static final long PRE_MS = 30 * 60000L;
+
+    private static final class It {
+        String id, name, room, color, day;
+        long s, e;
+    }
+
+    private static String todayKey() {
+        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+    }
+
+    /** Cours d'aujourd'hui (triés par heure de début), lus dans le résumé envoyé par le site. */
+    private static java.util.List<It> today(Context c) {
+        java.util.List<It> out = new java.util.ArrayList<>();
+        try {
+            String day = todayKey();
+            JSONObject d = WidgetData.load(c);
+            JSONObject days = d == null ? null : d.optJSONObject("days");
+            JSONArray list = days == null ? null : days.optJSONArray(day);
+            if (list == null) return out;
+            for (int k = 0; k < list.length(); k++) {
+                JSONObject cl = list.getJSONObject(k);
+                It it = new It();
+                it.day = day;
+                it.id = cl.optString("i", day + k);
+                it.name = cl.optString("n", "Cours");
+                it.room = cl.optString("r", "");
+                it.color = cl.optString("c", "");
+                it.s = ModeScheduler.timeOf(day, cl.optString("s", "00:00"));
+                it.e = ModeScheduler.timeOf(day, cl.optString("e", "00:00"));
+                if (it.s > 0L && it.e > it.s) out.add(it);
+            }
+            java.util.Collections.sort(out, new java.util.Comparator<It>() {
+                @Override
+                public int compare(It x, It y) {
+                    return Long.compare(x.s, y.s);
+                }
+            });
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    /** Index du cours à montrer : choix manuel (‹ ›) s'il est récent, sinon en cours, sinon le prochain. */
+    private static int pick(SharedPreferences p, java.util.List<It> l, long now) {
+        int cur = -1, nxt = -1;
+        for (int k = 0; k < l.size(); k++) {
+            It it = l.get(k);
+            if (cur < 0 && it.s <= now && now < it.e) cur = k;
+            else if (nxt < 0 && it.s > now) nxt = k;
+        }
+        int view = p.getInt("view_i", -1);
+        if (view >= 0 && view < l.size() && now < p.getLong("view_until", 0L)) return view;
+        return cur >= 0 ? cur : nxt;
+    }
+
     static void postCard(Context c) {
+        postLive(c);
+    }
+
+    /**
+     * Barre « live » façon Live Activity / lecteur de musique : le cours en cours (ou le prochain, 30 min avant),
+     * compte à rebours en direct, progression, et ‹ › pour parcourir les cours du jour.
+     */
+    static void postLive(Context c) {
         SharedPreferences p = modes(c);
-        String id = p.getString("active_id", null);
-        if (id == null) return;
-        String name = p.getString("card_name", "Cours");
-        String room = p.getString("card_room", "");
-        String day = p.getString("card_day", "");
-        long s = p.getLong("card_start", 0L);
-        long e = p.getLong("card_end", 0L);
+        if (!p.getBoolean("card", true)) {
+            cancelCard(c);
+            return;
+        }
+        java.util.List<It> l = today(c);
+        long now = System.currentTimeMillis();
+        boolean running = false, soon = false;
+        for (It it : l) {
+            if (it.s <= now && now < it.e) running = true;
+            else if (it.s > now && it.s - now <= PRE_MS) soon = true;
+        }
+        int idx = pick(p, l, now);
+        boolean manual = p.getInt("view_i", -1) >= 0 && now < p.getLong("view_until", 0L);
+        if (idx < 0 || !(running || soon || manual)) {
+            cancelCard(c);
+            return;
+        }
+        It it = l.get(idx);
+        boolean upcoming = now < it.s, live = !upcoming && now < it.e;
         int color;
         try {
-            color = Color.parseColor(p.getString("card_color", "#2A5CC6"));
+            color = Color.parseColor(it.color.length() > 0 ? it.color : "#2A5CC6");
         } catch (Exception ex) {
             color = 0xFF2A5CC6;
         }
         boolean silenced = p.getBoolean("silenced", false);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         channels(c);
+        String when = hm(it.s) + " – " + hm(it.e);
+        String line = (it.room.length() > 0 ? it.room + " · " : "") + when;
+        String state = upcoming ? "Commence bientôt" : live ? "En cours" : "Terminé";
+        String pos = (idx + 1) + "/" + l.size();
 
         Notification.Builder b = builder(c, CH_CARD);
         b.setSmallIcon(R.drawable.ic_stat_eduvault);
-        b.setContentTitle(name);
-        b.setContentText((room.length() > 0 ? room + " · " : "") + hm(s) + " – " + hm(e));
-        b.setSubText("En cours");
+        b.setContentTitle(it.name);
+        b.setContentText(line);
+        b.setSubText(state + " · " + pos);
         b.setOngoing(true);
         b.setOnlyAlertOnce(true);
-        b.setShowWhen(false);
         b.setColor(color);
         b.setVisibility(Notification.VISIBILITY_PUBLIC);
-        b.setContentIntent(openNotes(c, id, day, 31));
-        b.addAction(R.drawable.ic_act_note, "Note", openNotes(c, id, day, 32));
+        b.setCategory(Notification.CATEGORY_PROGRESS);
+        if (!(upcoming || live)) {
+            b.setShowWhen(false);
+        } else {
+            // compte à rebours en direct (jusqu'au début, puis jusqu'à la fin)
+            b.setShowWhen(true);
+            b.setWhen(upcoming ? it.s : it.e);
+            b.setUsesChronometer(true);
+            if (Build.VERSION.SDK_INT >= 24) b.setChronometerCountDown(true);
+        }
+        b.setContentIntent(openNotes(c, it.id, it.day, 31));
+        b.addAction(R.drawable.ic_act_prev, "Précédent", self(c, "PREV", 35));
+        b.addAction(R.drawable.ic_act_note, "Notes", openNotes(c, it.id, it.day, 32));
         b.addAction(silenced ? R.drawable.ic_act_bell : R.drawable.ic_act_mute, silenced ? "Sonnerie" : "Silence", self(c, "TOGGLE", 33));
         b.addAction(R.drawable.ic_act_stop, "Fin", self(c, "STOP", 34));
+        b.addAction(R.drawable.ic_act_next, "Suivant", self(c, "NEXT", 36));
 
         try {
             if (session != null) {
@@ -230,24 +325,42 @@ public class ModeReceiver extends BroadcastReceiver {
             }
             session = new MediaSession(c, "EduVaultCours");
             session.setMetadata(new MediaMetadata.Builder()
-                    .putString(MediaMetadata.METADATA_KEY_TITLE, name)
-                    .putString(MediaMetadata.METADATA_KEY_ARTIST, (room.length() > 0 ? room + " · " : "") + hm(s) + " – " + hm(e))
-                    .putString(MediaMetadata.METADATA_KEY_ALBUM, "EduVault")
-                    .putLong(MediaMetadata.METADATA_KEY_DURATION, Math.max(1000L, e - s))
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, it.name)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, line)
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, "EduVault · " + state + " · " + pos)
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, Math.max(1000L, it.e - it.s))
                     .build());
-            long pos = Math.max(0L, Math.min(e - s, System.currentTimeMillis() - s));
+            long done = Math.max(0L, Math.min(it.e - it.s, now - it.s));
             session.setPlaybackState(new PlaybackState.Builder()
                     .setActions(0L)
-                    .setState(PlaybackState.STATE_PLAYING, pos, 1.0f)
+                    .setState(live ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, upcoming ? 0L : done, live ? 1.0f : 0f)
                     .build());
             session.setActive(true);
             b.setStyle(new Notification.MediaStyle()
                     .setMediaSession(session.getSessionToken())
-                    .setShowActionsInCompactView(0, 1, 2));
+                    .setShowActionsInCompactView(1, 2, 4));
         } catch (Exception ex) {
             // sans session média : notification classique avec les mêmes boutons
         }
         nm.notify(CARD_ID, b.build());
+    }
+
+    private static void onNav(Context c, int dir) {
+        SharedPreferences p = modes(c);
+        java.util.List<It> l = today(c);
+        if (l.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        int cur = pick(p, l, now);
+        if (cur < 0) cur = l.size() - 1;
+        int n = (cur + dir + l.size()) % l.size();
+        p.edit().putInt("view_i", n).putLong("view_until", now + 10 * 60000L).apply();
+        postLive(c);
+    }
+
+    private static void onPre(Context c) {
+        modes(c).edit().putInt("view_i", -1).apply();
+        channels(c);
+        postLive(c);
     }
 
     static void cancelCard(Context c) {

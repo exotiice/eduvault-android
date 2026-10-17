@@ -105,7 +105,7 @@ Les 7 prochains jours sont programmés à l'avance (donc ça marche appli fermé
 | Fonction | Ce que ça fait | Permission |
 |---|---|---|
 | 🔕 Silence | « Ne pas déranger » (alarmes et favoris restent audibles) pendant chaque cours ; restauré à la fin. Sans accès DND : simple vibreur. | Accès « Ne pas déranger » (bouton Autoriser dans le dialogue) |
-| 🎵 Carte du cours | Notification style lecteur de musique (écran verrouillé) : cours, salle, barre de progression, boutons Notes / Silence / Stop | Notifications |
+| 🎵 Barre « live » | Apparaît 30 min avant chaque cours (« Commence bientôt »), puis pendant (« En cours »), avec compte à rebours en direct, progression, cours/salle/heure, et boutons ‹ › pour parcourir les cours du jour + Notes / Silence / Fin. Disparaît à la fin du dernier cours | Notifications |
 | 📊 Bilan | À la fin du cours : « Tu as compris combien ? » 30 / 60 / 100 %. Le résultat est ajouté aux notes du cours (`📊 17/10 · Compris 60 %`) et la moyenne par module s'affiche dans le dialogue | Notifications |
 | ⏰ Réveil | Le soir (heure réglable), si aucune alarme n'est réglée avant le 1er cours de demain : notification avec bouton « Régler l'alarme » (1er cours − X min) | Alarmes exactes |
 
