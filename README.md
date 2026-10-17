@@ -84,7 +84,7 @@ Appui long sur l'écran d'accueil > **Widgets** > **EduVault** :
 | Widget | Contenu |
 |---|---|
 | **Aujourd'hui** | les cours restants de la journée (● = en cours), salle |
-| **Agenda** | style Google Agenda : cours restants du jour puis des jours suivants, en pastilles aux couleurs de tes modules, **défilant** (+ examens 🚨 et devoirs 📝). Appuie sur une pastille : fiche de la séance (heure, salle, prof, compte à rebours, échéances et fiches du module, raccourcis) ou de l'échéance (✔ Terminé). Le « + » ajoute une séance ou une échéance. |
+| **Agenda** | style Google Agenda : cours restants du jour puis des jours suivants, en pastilles aux couleurs de tes modules, **défilant** (+ examens 🚨 et devoirs 📝). Appuie sur une pastille : fiche de la séance directement : zone de notes + photos (le clavier s'ouvre si la note est vide), avec compte à rebours, prof, échéances et fiches du module ou de l'échéance (✔ Terminé). Le « + » ajoute une séance ou une échéance. |
 | **Calendrier** | grille du mois (lundi → dimanche) avec pastilles colorées : cours, échéances, vacances ; flèches ‹ › pour changer de mois (mois précédent → +2), appui sur le titre = retour à aujourd'hui, « + » = ajouter, appui ailleurs = ouvre l'Agenda |
 | **Échéances** | prochains examens 🚨 / devoirs 📝 (« Dans 2 j »), et le nombre de fiches à réviser |
 

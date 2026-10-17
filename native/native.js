@@ -370,33 +370,27 @@
   function showSession(a) {
     var c = A.timetable.find(function (x) { return x.id === a.i; });
     if (!c) { go('ag'); return; }
-    var m = A.modules.find(function (x) { return x.id === c.moduleId; }) || {};
-    var st = new Date(a.d + 'T' + c.startTime), en = new Date(a.d + 'T' + c.endTime), now = Date.now();
-    var state = now < st ? '⏳ ' + Lg('Commence dans ', 'Starts in ', 'تبدأ بعد ') + relTxt(st - now)
-      : now < en ? '● ' + Lg('En cours · reste ', 'In progress · ', 'جارية · ') + relTxt(en - now)
-      : '✔ ' + Lg('Terminée', 'Finished', 'انتهت');
-    var tasks = A.tasks.filter(function (t) { return t.moduleId === c.moduleId && !t.completed && t.type !== 'review'; })
-      .sort(function (x, y) { return new Date(x.dueDate) - new Date(y.dueDate); }).slice(0, 3);
-    var cards = A.flashcards.filter(function (f) { return f.moduleId === c.moduleId && (!f.nextRev || f.nextRev <= Date.now()); }).length;
-    var rows = [
-      '🗓 ' + esc(dayLong(a.d)),
-      '⏰ ' + esc(c.startTime + ' – ' + c.endTime) + (c.room ? ' · 📍 ' + esc(c.room) : ''),
-      m.prof ? '👤 ' + esc(m.prof) : '',
-      (c.week && c.week !== 'all') ? '🔁 ' + Lg('Semaine ', 'Week ', 'الأسبوع ') + esc(c.week) : '',
-      m.absences ? '🚫 ' + m.absences + ' ' + Lg('absence(s)', 'absence(s)', 'غياب') : ''
-    ].filter(Boolean).map(function (r) { return '<div>' + r + '</div>'; }).join('');
-    var extra = '';
-    if (tasks.length) {
-      extra += '<small class="mu" style="display:block;margin-top:8px">' + Lg('Prochaines échéances', 'Upcoming deadlines', 'المواعيد القادمة') + '</small>' +
-        tasks.map(function (t) { return '<div>' + (t.type === 'exam' ? '🚨 ' : '📝 ') + esc(t.title) + ' <small class="mu">· ' + Lg('dans ', 'in ', 'بعد ') + relTxt(new Date(t.dueDate) - now) + '</small></div>'; }).join('');
-    }
-    if (cards) extra += '<div style="margin-top:6px">🧠 ' + cards + ' ' + Lg('fiche(s) à réviser', 'card(s) to review', 'بطاقة للمراجعة') + '</div>';
-    dlgShow('<h3 style="color:' + esc(m.color || 'inherit') + '">📚 ' + esc(modName(c.moduleId)) + '</h3>' +
-      '<div class="rs" style="display:block;margin:8px 0"><b>' + state + '</b><div style="margin-top:6px">' + rows + '</div></div>' + extra +
-      '<div class="row" style="margin-top:10px;justify-content:flex-start;flex-wrap:wrap">' +
-      '<button class="b p" data-a="evGo" data-i="fc">🧠 ' + Lg('Fiches', 'Cards', 'البطاقات') + '</button>' +
-      '<button class="b" data-a="evGo" data-i="mo">📖 ' + Lg('Modules', 'Modules', 'المواد') + '</button>' +
-      '<button class="b" data-a="editCls" data-i="' + esc(c.id) + '">✏️ ' + Lg('Modifier', 'Edit', 'تعديل') + '</button></div>' + closeBtn());
+    /* on ouvre directement la fiche de la séance du site (notes + photos), puis on y ajoute l'état et les infos du module */
+    act.cls(c.id);
+    safe(function () {
+      var d = $('dlg'), nt = $('nt'), sm = d.querySelector('small.mu');
+      if (!d.open || !nt || !sm) return;
+      var m = A.modules.find(function (x) { return x.id === c.moduleId; }) || {};
+      var st = new Date(a.d + 'T' + c.startTime), en = new Date(a.d + 'T' + c.endTime), now = Date.now();
+      var state = now < st ? '⏳ ' + Lg('Commence dans ', 'Starts in ', 'تبدأ بعد ') + relTxt(st - now)
+        : now < en ? '● ' + Lg('En cours · reste ', 'In progress · ', 'جارية · ') + relTxt(en - now)
+        : '✔ ' + Lg('Terminée', 'Finished', 'انتهت');
+      var tasks = A.tasks.filter(function (t) { return t.moduleId === c.moduleId && !t.completed && t.type !== 'review'; })
+        .sort(function (x, y) { return new Date(x.dueDate) - new Date(y.dueDate); }).slice(0, 3);
+      var cards = A.flashcards.filter(function (f) { return f.moduleId === c.moduleId && (!f.nextRev || f.nextRev <= Date.now()); }).length;
+      var h = '<div class="rs" style="display:block;margin:8px 0"><b>' + state + '</b> <small class="mu">· ' + esc(dayLong(a.d)) + '</small>' +
+        (m.prof ? '<div>👤 ' + esc(m.prof) + '</div>' : '') +
+        tasks.map(function (t) { return '<div>' + (t.type === 'exam' ? '🚨 ' : '📝 ') + esc(t.title) + ' <small class="mu">· ' + Lg('dans ', 'in ', 'بعد ') + relTxt(new Date(t.dueDate) - now) + '</small></div>'; }).join('') +
+        (cards ? '<div>🧠 ' + cards + ' ' + Lg('fiche(s) à réviser', 'card(s) to review', 'بطاقة للمراجعة') + '</div>' : '') + '</div>';
+      sm.insertAdjacentHTML('afterend', h);
+      nt.rows = 7;
+      if (!nt.value) setTimeout(function () { try { nt.focus(); } catch (e) {} }, 250);
+    });
   }
   function showTask(a) {
     var t = A.tasks.find(function (x) { return x.id === a.i; });
