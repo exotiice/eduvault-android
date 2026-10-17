@@ -9,4 +9,5 @@
     <color name="ag_text">#1C1B1F</color>
     <color name="ag_muted">#5F6368</color>
     <color name="ag_accent">#3B6CF6</color>
+    <color name="ag_line">#D9DCE8</color>
 </resources>

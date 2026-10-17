@@ -123,6 +123,21 @@
       return !hol && (c.week === 'all' || c.week === wk);
     }).sort(function (a, b) { return a.startTime.localeCompare(b.startTime); });
   }
+  /* calendrier du mois (widget Calendrier) : du 1er du mois précédent à la fin du mois +2 ; [libellé court, couleur] par jour */
+  function buildCal(ids) {
+    var out = {}, now = new Date();
+    var d = new Date(now.getFullYear(), now.getMonth() - 1, 1), end = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+    var color = {}; A.modules.forEach(function (m) { color[m.id] = m.color || '#6366F1'; });
+    var tasks = A.tasks.filter(function (t) { return !t.completed && t.type !== 'review'; });
+    for (; d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      var k = iso(d), list = [];
+      if (isHol(k)) list.push(['Vacances', '#0d9488']);
+      sessionsFor(d, ids).forEach(function (c) { list.push([String(modName(c.moduleId)).slice(0, 14), color[c.moduleId] || '#6366F1']); });
+      tasks.forEach(function (t) { if (iso(new Date(t.dueDate)) === k) list.push([(t.type === 'exam' ? '🚨' : '📝') + String(t.title).slice(0, 12), t.type === 'exam' ? '#dc2626' : '#d97706']); });
+      if (list.length) out[k] = list;
+    }
+    return out;
+  }
   function buildSummary() {
     var ids = curIds(), now = new Date(), days = {}, hol = {};
     for (var i = 0; i < 8; i++) {
@@ -139,7 +154,7 @@
       return { i: t.id, t: new Date(t.dueDate).getTime(), n: t.title, m: modName(t.moduleId), x: t.type === 'exam' ? 1 : 0 };
     });
     var cards = A.flashcards.filter(function (f) { return ids.has(f.moduleId) && (!f.nextRev || f.nextRev <= Date.now()); }).length;
-    return { u: Date.now(), days: days, hol: hol, tasks: tasks, cards: cards };
+    return { u: Date.now(), days: days, hol: hol, tasks: tasks, cards: cards, cal: buildCal(ids) };
   }
   var lastWidget = '';
   function pushWidget() {
@@ -420,6 +435,7 @@
       if (a.k === 's') showSession(a);
       else if (a.k === 't') showTask(a);
       else if (a.k === 'add') showAdd();
+      else if (a.k === 'go') go(a.i || 'ag');
     }).catch(function () {}).then(function () { acting = false; });
   }
   safe(function () {

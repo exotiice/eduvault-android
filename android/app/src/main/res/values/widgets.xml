@@ -3,4 +3,5 @@
     <string name="widget_today_desc">Tes cours restants aujourd\'hui</string>
     <string name="widget_tasks_desc">Examens, devoirs et fiches à réviser</string>
     <string name="widget_agenda_desc">Agenda : cours du jour et des jours suivants</string>
+    <string name="widget_month_desc">Calendrier du mois avec tes cours et échéances</string>
 </resources>
