@@ -41,6 +41,19 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: android-actions/setup-android@v3
+
+      - name: Configuration Firebase pour le push (facultatif)
+        env:
+          GS: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GS" ]; then
+            printf '%s' "$GS" > android/app/google-services.json
+            echo "google-services.json écrit depuis le secret GOOGLE_SERVICES_JSON"
+          else
+            echo "Pas de secret GOOGLE_SERVICES_JSON : push FCM actif seulement si android/app/google-services.json est dans le dépôt"
+          fi
+
       - name: Dépendances
         run: npm ci
 
