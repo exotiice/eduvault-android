@@ -1,7 +1,13 @@
 package com.exotiice.eduvault;
 
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Build;
+import android.provider.Settings;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -63,7 +69,62 @@ public class EduWidgetPlugin extends Plugin {
         }
         WidgetData.save(getContext(), json);
         WidgetData.refreshAll(getContext());
+        ModeScheduler.reschedule(getContext());
         call.resolve();
+    }
+
+    /** Réglages du « Mode cours » : {silent, card, checkin, alarm, lead, hour}. */
+    @PluginMethod
+    public void setPrefs(PluginCall call) {
+        try {
+            JSONObject o = new JSONObject(call.getString("json", "{}"));
+            SharedPreferences.Editor e = ModeReceiver.modes(getContext()).edit();
+            String[] bools = {"silent", "card", "checkin", "alarm"};
+            for (String k : bools) if (o.has(k)) e.putBoolean(k, o.getBoolean(k));
+            if (o.has("lead")) e.putInt("lead", o.getInt("lead"));
+            if (o.has("hour")) e.putInt("hour", o.getInt("hour"));
+            e.apply();
+            if (o.has("silent") && !o.getBoolean("silent")) ModeReceiver.restoreSilent(getContext());
+            ModeScheduler.reschedule(getContext());
+            call.resolve();
+        } catch (Exception ex) {
+            call.reject(String.valueOf(ex.getMessage()));
+        }
+    }
+
+    /** {dnd} : l'appli a-t-elle l'accès « Ne pas déranger » ? */
+    @PluginMethod
+    public void getModeInfo(PluginCall call) {
+        JSObject r = new JSObject();
+        NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        r.put("dnd", Build.VERSION.SDK_INT >= 23 && nm != null && nm.isNotificationPolicyAccessGranted());
+        call.resolve(r);
+    }
+
+    /** Évaluations de compréhension faites depuis les notifications (lues puis vidées). */
+    @PluginMethod
+    public void getRates(PluginCall call) {
+        JSObject r = new JSObject();
+        SharedPreferences p = ModeReceiver.modes(getContext());
+        try {
+            r.put("rates", new JSArray(p.getString("rates", "[]")));
+        } catch (Exception ex) {
+            r.put("rates", new JSArray());
+        }
+        p.edit().remove("rates").apply();
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void openDnd(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Exception ex) {
+            call.reject(String.valueOf(ex.getMessage()));
+        }
     }
 
     @PluginMethod
