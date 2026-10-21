@@ -65,6 +65,9 @@ public class ModeReceiver extends BroadcastReceiver {
             else if ("NEXT".equals(t)) onNav(c, 1);
             else if ("NOTE".equals(t)) onNote(c, i);
             else if ("TICK".equals(t)) postLive(c);
+            else if ("SKIP".equals(t)) onSkip(c, i);
+            else if ("ABS".equals(t)) onAbs(c, i);
+            else if ("LEAVE".equals(t)) onLeave(c, i);
         } catch (Exception ignored) {
             // un rappel ne doit jamais faire planter l'appli
         }
@@ -139,6 +142,7 @@ public class ModeReceiver extends BroadcastReceiver {
     // ---------------------------------------------------------------- cours
 
     private static void onStart(Context c, Intent i) {
+        if (WidgetData.isLocalSkip(c, i.getStringExtra("id"), i.getStringExtra("day"))) return;
         SharedPreferences p = modes(c);
         channels(c);
         p.edit()
@@ -156,6 +160,8 @@ public class ModeReceiver extends BroadcastReceiver {
     }
 
     private static void onEnd(Context c, Intent i) {
+        if (WidgetData.isLocalSkip(c, i.getStringExtra("id"), i.getStringExtra("day"))) return;
+        if (WidgetData.earlyAt(c, i.getStringExtra("id"), i.getStringExtra("day")) > 0L) return; // déjà terminé via « Sorti »
         SharedPreferences p = modes(c);
         channels(c);
         String id = i.getStringExtra("id");
@@ -198,7 +204,8 @@ public class ModeReceiver extends BroadcastReceiver {
     static final long PRE_MS = 30 * 60000L;
 
     private static final class It {
-        String id, name, room, color, day;
+        String id, name, room, color, day, ty = "", prof = "";
+        int ab;
         long s, e;
     }
 
@@ -220,11 +227,17 @@ public class ModeReceiver extends BroadcastReceiver {
                 It it = new It();
                 it.day = day;
                 it.id = cl.optString("i", day + k);
+                if (WidgetData.isLocalSkip(c, it.id, day)) continue; // « Pas cours » noté depuis la carte
+                it.ty = cl.optString("ty", "");
+                it.prof = cl.optString("p", "");
+                it.ab = cl.optInt("ab", 0);
+                long le = WidgetData.earlyAt(c, it.id, day);
                 it.name = cl.optString("n", "Cours");
                 it.room = cl.optString("r", "");
                 it.color = cl.optString("c", "");
                 it.s = ModeScheduler.timeOf(day, cl.optString("s", "00:00"));
                 it.e = ModeScheduler.timeOf(day, cl.optString("e", "00:00"));
+                if (le > 0L && le < it.e) it.e = Math.max(it.s, le); // sorti avant l'heure
                 if (it.s > 0L && it.e > it.s) out.add(it);
             }
             java.util.Collections.sort(out, new java.util.Comparator<It>() {
@@ -292,6 +305,97 @@ public class ModeReceiver extends BroadcastReceiver {
         postLive(c); // rafraîchit la carte (arrête l'indicateur de saisie)
     }
 
+    /** PendingIntent d'un bouton lié au cours affiché (id + jour dans l'intent). */
+    private static PendingIntent itemPi(Context c, String type, It it, int req) {
+        Intent r = new Intent(c, ModeReceiver.class);
+        r.setAction(PFX + type);
+        r.setData(Uri.parse("eduvault://mode/" + type + "/" + Uri.encode(it.id == null ? "" : it.id) + "/" + it.day));
+        r.putExtra("id", it.id);
+        r.putExtra("day", it.day);
+        r.putExtra("name", it.name);
+        return PendingIntent.getBroadcast(c, req, r, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static void queue(Context c, Intent i, String kind) throws Exception {
+        queue(c, i, kind, 0L);
+    }
+
+    private static void queue(Context c, Intent i, String kind, long ts) throws Exception {
+        SharedPreferences p = modes(c);
+        JSONArray arr = new JSONArray(p.getString("rates", "[]"));
+        JSONObject o = new JSONObject();
+        o.put("i", i.getStringExtra("id"));
+        o.put("d", i.getStringExtra("day"));
+        o.put("n", i.getStringExtra("name"));
+        o.put("k", kind);
+        if (ts > 0L) o.put("e", ts);
+        arr.put(o);
+        p.edit().putString("rates", arr.toString()).apply();
+    }
+
+    /** « Pas cours » : la séance disparaît tout de suite de la carte et des widgets ; l'appli l'enregistre à la prochaine ouverture. */
+    private static void onSkip(Context c, Intent i) throws Exception {
+        String id = i.getStringExtra("id"), day = i.getStringExtra("day");
+        if (id == null) return;
+        queue(c, i, "skip");
+        WidgetData.addLocalSkip(c, id, day);
+        SharedPreferences p = modes(c);
+        if (id.equals(p.getString("active_id", ""))) {
+            restoreSilent(c);
+            p.edit().remove("active_id").putInt("view_i", -1).apply();
+        }
+        Toast.makeText(c, "🚫 Pas cours : séance retirée pour aujourd'hui", Toast.LENGTH_SHORT).show();
+        postLive(c);
+        WidgetData.refreshAll(c);
+        ModeScheduler.reschedule(c, true);
+    }
+
+    /** « Sorti » : le prof nous a libérés avant l'heure. Fin du cours maintenant (silence levé, carte retirée), heure réelle notée. */
+    private static void onLeave(Context c, Intent i) throws Exception {
+        String id = i.getStringExtra("id"), day = i.getStringExtra("day");
+        if (id == null) return;
+        long now = System.currentTimeMillis();
+        java.util.List<It> l = today(c);
+        It cur = null, nxt = null;
+        for (It it : l) if (id.equals(it.id)) cur = it;
+        if (cur == null || now >= cur.e) return; // déjà terminé
+        for (It it : l) if (!id.equals(it.id) && it.s > now && (nxt == null || it.s < nxt.s)) nxt = it;
+
+        WidgetData.setEarly(c, id, day, now);
+        queue(c, i, "early", now);
+        SharedPreferences p = modes(c);
+        if (id.equals(p.getString("active_id", "")) && !ModeScheduler.nextStartWithin(c, now, 10 * 60000L)) {
+            restoreSilent(c);
+            p.edit().remove("active_id").apply();
+        }
+        p.edit().putInt("view_i", -1).apply();
+        postLive(c);
+        if (p.getBoolean("checkin", true) && now - cur.s >= 30 * 60000L) postCheckin(c, id, day, cur.name);
+
+        String msg = nxt != null ? "Libre jusqu'à " + hm(nxt.s) + " (" + left(nxt.s - now) + ")" : "Plus de cours aujourd'hui 🎉";
+        Toast.makeText(c, "🚪 Sorti à " + hm(now) + " · " + msg, Toast.LENGTH_LONG).show();
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            channels(c);
+            Notification.Builder b = builder(c, CH_CHECK);
+            b.setSmallIcon(R.drawable.ic_stat_eduvault);
+            b.setContentTitle("🎉 Sorti à " + hm(now) + " · " + left(cur.e - now) + " gagnées");
+            b.setContentText(msg);
+            b.setAutoCancel(true);
+            if (Build.VERSION.SDK_INT >= 26) b.setTimeoutAfter(nxt != null ? Math.max(60000L, nxt.s - now) : 2 * 3600000L);
+            nm.notify(8990, b.build());
+        } catch (Exception ignored) {
+        }
+        WidgetData.refreshAll(c);
+    }
+
+    /** « Absent » : compté dans le module à la prochaine ouverture de l'appli. */
+    private static void onAbs(Context c, Intent i) throws Exception {
+        queue(c, i, "abs");
+        Toast.makeText(c, "✋ Absence notée", Toast.LENGTH_SHORT).show();
+        postLive(c);
+    }
+
     private static PendingIntent tickPi(Context c) {
         return self(c, "TICK", 38);
     }
@@ -352,7 +456,9 @@ public class ModeReceiver extends BroadcastReceiver {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         channels(c);
         String when = hm(it.s) + " – " + hm(it.e);
-        String line = (it.room.length() > 0 ? it.room + " · " : "") + when;
+        String line = (it.ty.length() > 0 ? it.ty + " · " : "") + (it.room.length() > 0 ? it.room + " · " : "") + when;
+        String next = idx + 1 < l.size() ? "Ensuite · " + hm(l.get(idx + 1).s) + " " + l.get(idx + 1).name
+                + (l.get(idx + 1).room.length() > 0 ? " · " + l.get(idx + 1).room : "") : "";
         String rest = upcoming ? "⏳ dans " + left(it.s - now) : live ? "⏳ reste " + left(it.e - now) : "";
         String text = rest.length() > 0 ? rest + " · " + line : line;
         String state = upcoming ? "Commence bientôt" : live ? "En cours" : "Terminé";
@@ -362,7 +468,7 @@ public class ModeReceiver extends BroadcastReceiver {
         b.setSmallIcon(R.drawable.ic_stat_eduvault);
         b.setContentTitle(it.name);
         b.setContentText(text);
-        b.setSubText(state + " · " + pos);
+        b.setSubText(state + " · " + pos + (it.prof.length() > 0 ? " · 👤 " + it.prof : "") + (it.ab > 0 ? " · ✋ " + it.ab + " abs." : ""));
         b.setOngoing(true);
         b.setOnlyAlertOnce(true);
         b.setColor(color);
@@ -378,11 +484,11 @@ public class ModeReceiver extends BroadcastReceiver {
             if (Build.VERSION.SDK_INT >= 24) b.setChronometerCountDown(true);
         }
         b.setContentIntent(openNotes(c, it.id, it.day, 31));
-        b.addAction(R.drawable.ic_act_prev, "Précédent", self(c, "PREV", 35));
         b.addAction(noteAction(c, it));
         b.addAction(silenced ? R.drawable.ic_act_bell : R.drawable.ic_act_mute, silenced ? "Sonnerie" : "Silence", self(c, "TOGGLE", 33));
-        b.addAction(R.drawable.ic_act_stop, "Fin", self(c, "STOP", 34));
-        b.addAction(R.drawable.ic_act_next, "Suivant", self(c, "NEXT", 36));
+        b.addAction(R.drawable.ic_act_stop, "Pas cours", itemPi(c, "SKIP", it, 39));
+        b.addAction(R.drawable.ic_act_prev, "Absent", itemPi(c, "ABS", it, 40));
+        b.addAction(R.drawable.ic_act_next, "Sorti", itemPi(c, "LEAVE", it, 41));
 
         try {
             if (session != null) {
@@ -395,7 +501,7 @@ public class ModeReceiver extends BroadcastReceiver {
             session.setMetadata(new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, it.name)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, text)
-                    .putString(MediaMetadata.METADATA_KEY_ALBUM, "EduVault · " + state + " · " + pos)
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, next.length() > 0 ? next : "EduVault · " + state + " · " + pos)
                     .putLong(MediaMetadata.METADATA_KEY_DURATION, Math.max(1000L, it.e - it.s))
                     .build());
             long done = Math.max(0L, Math.min(it.e - it.s, now - it.s));
@@ -406,7 +512,7 @@ public class ModeReceiver extends BroadcastReceiver {
             session.setActive(true);
             b.setStyle(new Notification.MediaStyle()
                     .setMediaSession(session.getSessionToken())
-                    .setShowActionsInCompactView(1, 2, 4));
+                    .setShowActionsInCompactView(0, 1, 2));
         } catch (Exception ex) {
             // sans session média : notification classique avec les mêmes boutons
         }

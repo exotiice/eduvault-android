@@ -49,6 +49,25 @@ public class TodayWidget extends AppWidgetProvider {
             } else {
                 JSONObject days = d.optJSONObject("days");
                 JSONArray list = days == null ? null : days.optJSONArray(day);
+                // compte à rebours du prochain examen dans l'en-tête
+                try {
+                    JSONArray tk = d.optJSONArray("tasks");
+                    long nowMs = now.getTimeInMillis(), best = Long.MAX_VALUE;
+                    String bn = "";
+                    for (int q = 0; tk != null && q < tk.length(); q++) {
+                        JSONObject t = tk.getJSONObject(q);
+                        long due = t.optLong("t", 0);
+                        if (t.optInt("x", 0) == 1 && due > nowMs && due < best) {
+                            best = due;
+                            bn = t.optString("m", "");
+                        }
+                    }
+                    if (best != Long.MAX_VALUE) {
+                        long dd = (best - nowMs + 86399999L) / 86400000L;
+                        v.setTextViewText(R.id.hd, WidgetData.capitalize(date) + " · 🚨 " + (bn.length() > 0 ? bn + " " : "Exam ") + "J-" + dd);
+                    }
+                } catch (Exception ignored) {
+                }
                 boolean hol = d.optJSONObject("hol") != null && d.optJSONObject("hol").has(day);
                 if (list == null) {
                     empty = "Données trop anciennes : ouvre EduVault pour actualiser.";
@@ -57,6 +76,9 @@ public class TodayWidget extends AppWidgetProvider {
                     int total = list.length();
                     for (int i = 0; i < total && shown < ROW.length; i++) {
                         JSONObject cl = list.getJSONObject(i);
+                        if (WidgetData.isLocalSkip(c, cl.optString("i", ""), day)) continue; // « Pas cours » depuis la carte
+                        long le = WidgetData.earlyAt(c, cl.optString("i", ""), day);
+                        if (le > 0L && le <= now.getTimeInMillis()) continue;                // « Sorti » depuis la carte
                         int end = WidgetData.minutes(cl.optString("e", "00:00"));
                         if (end <= nowMin) continue;
                         int start = WidgetData.minutes(cl.optString("s", "00:00"));
@@ -65,10 +87,14 @@ public class TodayWidget extends AppWidgetProvider {
                         String prof = cl.optString("p", "");
                         String title = (live ? "● " : "") + cl.optString("s") + " – " + cl.optString("e")
                                 + (ty.length() > 0 ? " [" + ty + "]" : "")
+                                + (live ? " · reste " + WidgetData.fmtMin(end - nowMin)
+                                        : shown == 0 ? " · dans " + WidgetData.fmtMin(start - nowMin) : "")
                                 + "  " + cl.optString("n");
+                        int ab = cl.optInt("ab", 0);
                         String room = cl.optString("r", "");
                         String info = (room.length() > 0 ? "📍 " + room : "")
-                                + (prof.length() > 0 ? (room.length() > 0 ? " · " : "") + "👤 " + prof : "");
+                                + (prof.length() > 0 ? (room.length() > 0 ? " · " : "") + "👤 " + prof : "")
+                                + (ab > 0 ? " · ✋ " + ab + " abs." : "");
                         v.setViewVisibility(ROW[shown], View.VISIBLE);
                         v.setTextViewText(TITLE[shown], title);
                         v.setTextViewText(SUB[shown], info);

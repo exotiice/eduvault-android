@@ -146,7 +146,7 @@
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
         var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
-        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '' };
+        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '', ab: absCount(c.moduleId) };
       });
     }
     var tasks = A.tasks.filter(function (t) {
@@ -504,25 +504,66 @@
     }).catch(function () {});
   }
   /* bilans reçus depuis les notifications → on les écrit dans les notes du cours */
+  /* absences d'un module (compteur affiché sur la carte) */
+  function absCount(mid) {
+    var n = 0;
+    (A.timetable || []).forEach(function (c) { if (c.moduleId === mid && c.abs) n += c.abs.length; });
+    return n;
+  }
+  /* prochaine date (> aujourd'hui) d'une séance du même module : pour l'échéance d'un devoir noté depuis la carte */
+  function nextDueFor(c) {
+    var d0 = new Date(), ids = new Set([c.moduleId]);
+    for (var i = 1; i <= 21; i++) {
+      var d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i), l = sessionsFor(d, ids);
+      if (l.length) return iso(d) + 'T' + (l[0].startTime || '08:00');
+    }
+    return iso(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 1)) + 'T18:00';
+  }
   function drainRates() {
     var W = P('EduWidget');
     if (!W || !W.getRates) return;
     W.getRates().then(function (r) {
       var list = (r && r.rates) || [];
       if (!list.length || !A.settings.level) return;
+      var nNote = 0, nSkip = 0, nAbs = 0, nTask = 0, nEarly = 0;
       list.forEach(function (x) {
         var c = A.timetable.find(function (t) { return t.id === x.i; });
         if (!c) return;
+        var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
+        if (x.k === 'skip') {                       // « Pas cours » depuis la carte
+          if (x.d && (c.skip || []).indexOf(x.d) < 0) c.skip = (c.skip || []).concat(x.d);
+          nSkip++; return;
+        }
         var n = A.notes.find(function (z) { return z.classId === x.i; });
         if (!n) { n = { classId: x.i, text: '', photos: [] }; A.notes.push(n); }
-        var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
-        var line = x.t ? '📝 ' + dm + ' · ' + String(x.t).replace(/\s+/g, ' ').trim()
-                       : '📊 ' + dm + ' · ' + Lg('Compris', 'Understood', 'فهم') + ' ' + x.p + ' %';
+        var line;
+        if (x.k === 'abs') {                        // « Absent » depuis la carte
+          if (x.d && (c.abs || []).indexOf(x.d) < 0) c.abs = (c.abs || []).concat(x.d);
+          line = '✋ ' + dm + ' · ' + Lg('Absent', 'Absent', 'غائب'); nAbs++;
+        } else if (x.k === 'early') {               // « Sorti » depuis la carte
+          var eh = x.e ? new Date(x.e) : null, em = eh ? ('0' + eh.getHours()).slice(-2) + ':' + ('0' + eh.getMinutes()).slice(-2) : '';
+          if (x.d && em) { c.early = c.early || {}; c.early[x.d] = em; }
+          line = '🚪 ' + dm + ' · ' + Lg('Sorti à ', 'Left at ', 'خرجت على ') + em + ' (' + Lg('prévu ', 'planned ', 'المقرر ') + c.endTime + ')'; nEarly++;
+        } else if (x.t && /^\s*(devoir|dv|hw|!)\s*[:\-]?\s*\S/i.test(x.t)) {   // « devoir … » => échéance
+          var title = String(x.t).replace(/^\s*(devoir|dv|hw|!)\s*[:\-]?\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 120);
+          A.tasks.push({ id: uid('t'), moduleId: c.moduleId, type: 'homework', title: title, dueDate: nextDueFor(c), completed: false });
+          line = '📝 ' + dm + ' · ' + Lg('Devoir : ', 'Homework: ', 'واجب: ') + title; nTask++;
+        } else if (x.t) {
+          line = '📝 ' + dm + ' · ' + String(x.t).replace(/\s+/g, ' ').trim(); nNote++;
+        } else {
+          line = '📊 ' + dm + ' · ' + Lg('Compris', 'Understood', 'فهم') + ' ' + x.p + ' %'; nNote++;
+        }
         n.text = (n.text ? n.text + '\n' : '') + line;
         n.date = new Date().toISOString();
       });
       try { upd(); } catch (e) {}
-      toast('📝 ' + Lg('Note / bilan enregistré', 'Note / check-in saved', 'تم حفظ الملاحظة / التقييم') + ' ✔', 'ok');
+      var msg = [];
+      if (nNote) msg.push('📝 ' + nNote);
+      if (nTask) msg.push('📌 ' + nTask);
+      if (nAbs) msg.push('✋ ' + nAbs);
+      if (nEarly) msg.push('🚪 ' + nEarly);
+      if (nSkip) msg.push('🚫 ' + nSkip);
+      if (msg.length) toast(msg.join(' · ') + ' ✔ ' + Lg('enregistré', 'saved', 'تم الحفظ'), 'ok');
       sched();
     }).catch(function () {});
   }

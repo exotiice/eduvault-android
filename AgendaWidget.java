@@ -87,6 +87,11 @@ public class AgendaWidget extends AppWidgetProvider {
                 if (ss != null) {
                     for (int i = 0; i < ss.length(); i++) {
                         JSONObject cl = ss.getJSONObject(i);
+                        if (WidgetData.isLocalSkip(c, cl.optString("i", ""), key)) continue; // « Pas cours » depuis la carte
+                        if (off == 0) {
+                            long le = WidgetData.earlyAt(c, cl.optString("i", ""), key);
+                            if (le > 0L && le <= nowMs) continue;                          // « Sorti » depuis la carte
+                        }
                         int start = WidgetData.minutes(cl.optString("s", "00:00"));
                         int end = WidgetData.minutes(cl.optString("e", "00:00"));
                         if (off == 0 && end <= nowMin) continue;
@@ -99,10 +104,13 @@ public class AgendaWidget extends AppWidgetProvider {
                         e.id = cl.optString("i", "");
                         e.day = key;
                         e.title = cl.optString("n");
+                        int ab = cl.optInt("ab", 0);
                         e.sub = (live ? "● " : "") + cl.optString("s") + " – " + cl.optString("e")
+                                + (live ? " · reste " + WidgetData.fmtMin(end - nowMin) : "")
                                 + (ty.length() > 0 ? " · " + ty : "")
                                 + (room.length() > 0 ? " · " + room : "")
-                                + (prof.length() > 0 ? " · 👤 " + prof : "");
+                                + (prof.length() > 0 ? " · 👤 " + prof : "")
+                                + (ab > 0 ? " · ✋ " + ab + " abs." : "");
                         e.color = color(cl.optString("c", "#6366F1"));
                         e.sort = start;
                         list.add(e);
