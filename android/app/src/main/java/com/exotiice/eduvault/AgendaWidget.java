@@ -92,13 +92,17 @@ public class AgendaWidget extends AppWidgetProvider {
                         if (off == 0 && end <= nowMin) continue;
                         boolean live = off == 0 && start <= nowMin;
                         String room = cl.optString("r", "");
+                        String ty = cl.optString("ty", "");
+                        String prof = cl.optString("p", "");
                         Entry e = new Entry();
                         e.kind = "s";
                         e.id = cl.optString("i", "");
                         e.day = key;
                         e.title = cl.optString("n");
                         e.sub = (live ? "● " : "") + cl.optString("s") + " – " + cl.optString("e")
-                                + (room.length() > 0 ? " · " + room : "");
+                                + (ty.length() > 0 ? " · " + ty : "")
+                                + (room.length() > 0 ? " · " + room : "")
+                                + (prof.length() > 0 ? " · 👤 " + prof : "");
                         e.color = color(cl.optString("c", "#6366F1"));
                         e.sort = start;
                         list.add(e);

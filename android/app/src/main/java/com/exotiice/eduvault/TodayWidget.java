@@ -61,13 +61,18 @@ public class TodayWidget extends AppWidgetProvider {
                         if (end <= nowMin) continue;
                         int start = WidgetData.minutes(cl.optString("s", "00:00"));
                         boolean live = start <= nowMin;
+                        String ty = cl.optString("ty", "");
+                        String prof = cl.optString("p", "");
                         String title = (live ? "● " : "") + cl.optString("s") + " – " + cl.optString("e")
+                                + (ty.length() > 0 ? " [" + ty + "]" : "")
                                 + "  " + cl.optString("n");
                         String room = cl.optString("r", "");
+                        String info = (room.length() > 0 ? "📍 " + room : "")
+                                + (prof.length() > 0 ? (room.length() > 0 ? " · " : "") + "👤 " + prof : "");
                         v.setViewVisibility(ROW[shown], View.VISIBLE);
                         v.setTextViewText(TITLE[shown], title);
-                        v.setTextViewText(SUB[shown], room.length() > 0 ? "📍 " + room : "");
-                        v.setViewVisibility(SUB[shown], room.length() > 0 ? View.VISIBLE : View.GONE);
+                        v.setTextViewText(SUB[shown], info);
+                        v.setViewVisibility(SUB[shown], info.length() > 0 ? View.VISIBLE : View.GONE);
                         shown++;
                     }
                     if (shown == 0) {

@@ -145,7 +145,7 @@
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
         var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
-        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '' };
+        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '' };
       });
     }
     var tasks = A.tasks.filter(function (t) {
