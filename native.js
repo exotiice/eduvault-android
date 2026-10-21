@@ -140,13 +140,15 @@
     return out;
   }
   function buildSummary() {
-    var ids = curIds(), now = new Date(), days = {}, hol = {};
+    var ids = curIds(), now = new Date(), days = {}, hol = {}, abs = {};
     for (var i = 0; i < 8; i++) {
       var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i), k = iso(d);
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
         var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
-        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '', ab: absCount(c.moduleId) };
+        var le = c.early && c.early[k];   // « Sorti tôt » : l'heure réelle de fin remplace l'heure prévue
+        var endT = le && le > c.startTime && le < c.endTime ? le : c.endTime;
+        return { i: c.id, s: c.startTime, e: endT, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '', ab: abs[c.moduleId] === undefined ? (abs[c.moduleId] = absCount(c.moduleId)) : abs[c.moduleId] };
       });
     }
     var tasks = A.tasks.filter(function (t) {
@@ -522,9 +524,11 @@
   function drainRates() {
     var W = P('EduWidget');
     if (!W || !W.getRates) return;
+    // données pas encore chargées : on ne vide pas la file native (les actions de la carte attendent le prochain essai)
+    if (!A || !A.settings || !A.settings.level || !(A.timetable || []).length) return;
     W.getRates().then(function (r) {
       var list = (r && r.rates) || [];
-      if (!list.length || !A.settings.level) return;
+      if (!list.length) return;
       var nNote = 0, nSkip = 0, nAbs = 0, nTask = 0, nEarly = 0;
       list.forEach(function (x) {
         var c = A.timetable.find(function (t) { return t.id === x.i; });
@@ -574,6 +578,7 @@
     if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainRates, 600); });
     if (W && W.addListener) W.addListener('widgetAction', function () { setTimeout(drainRates, 400); });
     setTimeout(drainRates, 2500);
+    setTimeout(drainRates, 9000);
     /* bouton d'accès dans les réglages du site */
     new MutationObserver(function () {
       var b = document.querySelector('[data-a="resHub"]');

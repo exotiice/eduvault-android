@@ -6,7 +6,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Calendar;
@@ -21,6 +20,7 @@ final class WidgetData {
 
     static void save(Context c, String json) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, json).apply();
+        pruneAfterSave(c, json);
     }
 
     static JSONObject load(Context c) {
@@ -32,61 +32,93 @@ final class WidgetData {
         }
     }
 
-    // ---- séances retirées localement (bouton « Pas cours » de la carte), en attendant que l'appli les enregistre ----
+    // ---- actions faites depuis la carte (Pas cours / Sorti / Absent), prises en compte tout de suite en attendant que l'appli les enregistre ----
+    // Chaque marque = { "id|jour": horodatage }. Elle disparaît quand l'appli a pris le relais (nouveau résumé plus récent, file vide) ou le lendemain.
 
-    static boolean isLocalSkip(Context c, String id, String day) {
+    private static final String PM = "eduvault_modes";
+    static final String SKIPS = "local_skips", EARLY = "local_early", ABS = "local_abs", CHK = "once_chk";
+
+    private static JSONObject marks(Context c, String key) {
         try {
-            JSONArray a = new JSONArray(c.getSharedPreferences("eduvault_modes", Context.MODE_PRIVATE).getString("local_skips", "[]"));
-            String k = id + "|" + day;
-            for (int i = 0; i < a.length(); i++) if (k.equals(a.optString(i))) return true;
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
-    static void addLocalSkip(Context c, String id, String day) {
-        try {
-            android.content.SharedPreferences p = c.getSharedPreferences("eduvault_modes", Context.MODE_PRIVATE);
-            JSONArray a = new JSONArray(p.getString("local_skips", "[]"));
-            JSONArray out = new JSONArray();
-            String today = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new java.util.Date());
-            String k = id + "|" + day;
-            for (int i = 0; i < a.length(); i++) {
-                String v = a.optString(i);
-                int bar = v.lastIndexOf('|');
-                if (bar > 0 && v.substring(bar + 1).compareTo(today) >= 0 && !v.equals(k)) out.put(v);
-            }
-            out.put(k);
-            p.edit().putString("local_skips", out.toString()).apply();
-        } catch (Exception ignored) {
-        }
-    }
-
-    // ---- « Sorti » : heure réelle de sortie d'un cours (bouton de la carte), en attendant l'enregistrement par l'appli ----
-
-    static long earlyAt(Context c, String id, String day) {
-        try {
-            JSONObject o = new JSONObject(c.getSharedPreferences("eduvault_modes", Context.MODE_PRIVATE).getString("local_early", "{}"));
-            return o.optLong(id + "|" + day, 0L);
+            return new JSONObject(c.getSharedPreferences(PM, Context.MODE_PRIVATE).getString(key, "{}"));
         } catch (Exception e) {
-            return 0L;
+            return new JSONObject();
         }
     }
 
-    static void setEarly(Context c, String id, String day, long ts) {
+    private static String todayIso() {
+        return new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new java.util.Date());
+    }
+
+    /** Retire les marques d'un jour passé, et (si minTs > 0) celles posées avant minTs. */
+    private static JSONObject cleaned(JSONObject o, long minTs) {
+        JSONObject out = new JSONObject();
+        String today = todayIso();
         try {
-            android.content.SharedPreferences p = c.getSharedPreferences("eduvault_modes", Context.MODE_PRIVATE);
-            JSONObject o = new JSONObject(p.getString("local_early", "{}"));
-            JSONObject out = new JSONObject();
-            String today = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new java.util.Date());
             java.util.Iterator<String> it = o.keys();
             while (it.hasNext()) {
                 String k = it.next();
                 int bar = k.lastIndexOf('|');
-                if (bar > 0 && k.substring(bar + 1).compareTo(today) >= 0) out.put(k, o.optLong(k));
+                long ts = o.optLong(k, 0L);
+                if (bar > 0 && k.substring(bar + 1).compareTo(today) >= 0 && (minTs <= 0L || ts >= minTs)) out.put(k, ts);
             }
-            out.put(id + "|" + day, ts);
-            p.edit().putString("local_early", out.toString()).apply();
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    static long markTs(Context c, String key, String id, String day) {
+        return marks(c, key).optLong(id + "|" + day, 0L);
+    }
+
+    /** Pose la marque ; renvoie false si elle existait déjà. */
+    static boolean putMark(Context c, String key, String id, String day, long ts) {
+        try {
+            JSONObject o = cleaned(marks(c, key), 0L);
+            String k = id + "|" + day;
+            boolean fresh = !o.has(k);
+            o.put(k, ts);
+            c.getSharedPreferences(PM, Context.MODE_PRIVATE).edit().putString(key, o.toString()).apply();
+            return fresh;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    static boolean isLocalSkip(Context c, String id, String day) {
+        return id != null && markTs(c, SKIPS, id, day) > 0L;
+    }
+
+    static void addLocalSkip(Context c, String id, String day) {
+        putMark(c, SKIPS, id, day, System.currentTimeMillis());
+    }
+
+    static long earlyAt(Context c, String id, String day) {
+        return id == null ? 0L : markTs(c, EARLY, id, day);
+    }
+
+    static void setEarly(Context c, String id, String day, long ts) {
+        putMark(c, EARLY, id, day, ts);
+    }
+
+    /** Une seule fois par cours et par jour (absence, bilan « compris »). */
+    static boolean once(Context c, String key, String id, String day) {
+        return putMark(c, key, id, day, System.currentTimeMillis());
+    }
+
+    /** Appelé à chaque nouveau résumé : si l'appli a déjà enregistré les actions en attente, le résumé est la référence → on oublie les marques plus anciennes. */
+    private static void pruneAfterSave(Context c, String json) {
+        try {
+            long u = new JSONObject(json).optLong("u", 0L);
+            android.content.SharedPreferences p = c.getSharedPreferences(PM, Context.MODE_PRIVATE);
+            String pending = p.getString("rates", "[]");
+            android.content.SharedPreferences.Editor e = p.edit();
+            for (String key : new String[]{SKIPS, EARLY, ABS}) {
+                JSONObject o = marks(c, key);
+                if (o.length() == 0) continue;
+                e.putString(key, cleaned(o, pending.length() <= 2 ? u : 0L).toString());
+            }
+            e.apply();
         } catch (Exception ignored) {
         }
     }

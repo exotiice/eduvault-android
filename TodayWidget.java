@@ -87,8 +87,7 @@ public class TodayWidget extends AppWidgetProvider {
                         String prof = cl.optString("p", "");
                         String title = (live ? "● " : "") + cl.optString("s") + " – " + cl.optString("e")
                                 + (ty.length() > 0 ? " [" + ty + "]" : "")
-                                + (live ? " · reste " + WidgetData.fmtMin(end - nowMin)
-                                        : shown == 0 ? " · dans " + WidgetData.fmtMin(start - nowMin) : "")
+                                + (live ? " · reste " + WidgetData.fmtMin(end - nowMin) : "")
                                 + "  " + cl.optString("n");
                         int ab = cl.optInt("ab", 0);
                         String room = cl.optString("r", "");

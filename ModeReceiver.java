@@ -64,7 +64,10 @@ public class ModeReceiver extends BroadcastReceiver {
             else if ("PREV".equals(t)) onNav(c, -1);
             else if ("NEXT".equals(t)) onNav(c, 1);
             else if ("NOTE".equals(t)) onNote(c, i);
-            else if ("TICK".equals(t)) postLive(c);
+            else if ("TICK".equals(t)) {
+                postLive(c);
+                WidgetData.refreshAll(c); // « reste X min » des widgets suit la minute pendant un cours
+            }
             else if ("SKIP".equals(t)) onSkip(c, i);
             else if ("ABS".equals(t)) onAbs(c, i);
             else if ("LEAVE".equals(t)) onLeave(c, i);
@@ -143,6 +146,7 @@ public class ModeReceiver extends BroadcastReceiver {
 
     private static void onStart(Context c, Intent i) {
         if (WidgetData.isLocalSkip(c, i.getStringExtra("id"), i.getStringExtra("day"))) return;
+        WidgetData.refreshAll(c);
         SharedPreferences p = modes(c);
         channels(c);
         p.edit()
@@ -162,6 +166,7 @@ public class ModeReceiver extends BroadcastReceiver {
     private static void onEnd(Context c, Intent i) {
         if (WidgetData.isLocalSkip(c, i.getStringExtra("id"), i.getStringExtra("day"))) return;
         if (WidgetData.earlyAt(c, i.getStringExtra("id"), i.getStringExtra("day")) > 0L) return; // déjà terminé via « Sorti »
+        WidgetData.refreshAll(c);
         SharedPreferences p = modes(c);
         channels(c);
         String id = i.getStringExtra("id");
@@ -391,6 +396,10 @@ public class ModeReceiver extends BroadcastReceiver {
 
     /** « Absent » : compté dans le module à la prochaine ouverture de l'appli. */
     private static void onAbs(Context c, Intent i) throws Exception {
+        if (!WidgetData.once(c, WidgetData.ABS, i.getStringExtra("id"), i.getStringExtra("day"))) {
+            Toast.makeText(c, "✋ Absence déjà notée pour ce cours", Toast.LENGTH_SHORT).show();
+            return;
+        }
         queue(c, i, "abs");
         Toast.makeText(c, "✋ Absence notée", Toast.LENGTH_SHORT).show();
         postLive(c);
@@ -411,8 +420,8 @@ public class ModeReceiver extends BroadcastReceiver {
             }
             long now = System.currentTimeMillis();
             long next = now - (now % 60000L) + 60000L + 500L;
-            if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, tickPi(c));
-            else am.set(AlarmManager.RTC_WAKEUP, next, tickPi(c));
+            if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC, next, tickPi(c));
+            else am.set(AlarmManager.RTC, next, tickPi(c));
         } catch (Exception ignored) {
         }
     }
@@ -491,13 +500,7 @@ public class ModeReceiver extends BroadcastReceiver {
         b.addAction(R.drawable.ic_act_next, "Sorti", itemPi(c, "LEAVE", it, 41));
 
         try {
-            if (session != null) {
-                try {
-                    session.release();
-                } catch (Exception ignored) {
-                }
-            }
-            session = new MediaSession(c, "EduVaultCours");
+            if (session == null) session = new MediaSession(c, "EduVaultCours"); // réutilisée : pas de clignotement à chaque minute
             session.setMetadata(new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, it.name)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, text)
@@ -569,6 +572,7 @@ public class ModeReceiver extends BroadcastReceiver {
 
     private static void postCheckin(Context c, String id, String day, String name) {
         if (id == null) return;
+        if (!WidgetData.once(c, WidgetData.CHK, id, day == null ? "" : day)) return; // un seul bilan par cours
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         int nid = 8000 + (Math.abs(id.hashCode() + (day == null ? 0 : day.hashCode())) % 900);
         Notification.Builder b = builder(c, CH_CHECK);
