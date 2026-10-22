@@ -109,8 +109,10 @@ final class WidgetData {
     /** Appelé à chaque nouveau résumé : si l'appli a déjà enregistré les actions en attente, le résumé est la référence → on oublie les marques plus anciennes. */
     private static void pruneAfterSave(Context c, String json) {
         try {
-            long u = new JSONObject(json).optLong("u", 0L);
             android.content.SharedPreferences p = c.getSharedPreferences(PM, Context.MODE_PRIVATE);
+            // rien à nettoyer dans 99 % des cas : on évite d'analyser tout le résumé à chaque sauvegarde
+            if (p.getString(SKIPS, "{}").length() <= 2 && p.getString(EARLY, "{}").length() <= 2 && p.getString(ABS, "{}").length() <= 2) return;
+            long u = new JSONObject(json).optLong("u", 0L);
             String pending = p.getString("rates", "[]");
             android.content.SharedPreferences.Editor e = p.edit();
             for (String key : new String[]{SKIPS, EARLY, ABS}) {

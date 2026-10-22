@@ -105,6 +105,11 @@ public class EduGooglePlugin extends Plugin {
         JSObject o = new JSObject();
         o.put("accessToken", token);
         o.put("expiresIn", 3300); // l'API ne donne pas l'expiration : les jetons Google durent ~1 h
+        try { // compte utilisé (si Google le donne) : mémorisé côté site pour la reconnexion silencieuse
+            com.google.android.gms.auth.api.signin.GoogleSignInAccount a = r.toGoogleSignInAccount();
+            if (a != null && a.getEmail() != null) o.put("email", a.getEmail());
+        } catch (Exception ignored) {
+        }
         call.resolve(o);
     }
 

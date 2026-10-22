@@ -136,8 +136,9 @@
   try {
     document.addEventListener('click', function (e) {
       try {
-        var t = e.target && e.target.closest && e.target.closest('[data-a]');
-        if (t && /^(drive|dh|gc\w*)$/i.test(t.getAttribute('data-a') || '')) window.__evTap = Date.now();
+        // tout vrai clic sur un bouton = action voulue par l'utilisateur (la reconnexion automatique, elle, part au « pointerup » avant le clic)
+        var t = e.target && e.target.closest && e.target.closest('[data-a],button,a,label,summary');
+        if (t) window.__evTap = Date.now();
       } catch (x) {}
     }, true);
   } catch (e) {}
@@ -150,10 +151,15 @@
           requestAccessToken: function (o) {
             o = o || {};
             // reconnexion automatique (au lancement / au premier toucher) = silencieuse ; fenêtre Google seulement après un clic explicite sur ☁️ / Google Agenda
-            var silent = !(window.__evTap && Date.now() - window.__evTap < 2500);
+            var pick = o.prompt === 'select_account';   // « choisir un autre compte » (ex. compte d'école pour Classroom) : fenêtre native avec la liste des comptes
+            var silent = !pick && !(window.__evTap && Date.now() - window.__evTap < 2500);
+            // un compte mémorisé par groupe de permissions (Drive, Agenda, Classroom peuvent utiliser des comptes différents)
+            var akey = 'evG_acc_' + String(cfg.scope || '').split(' ')[0], saved = '';
+            try { saved = pick ? '' : (localStorage.getItem(akey) || ''); } catch (e) {}
             var G; try { G = (C.Plugins && C.Plugins.EduGoogle) || (C.registerPlugin && C.registerPlugin('EduGoogle')); } catch (e) {}
             if (!G) { cfg.error_callback && cfg.error_callback({ type: 'popup_failed_to_open' }); return; }
-            G.authorize({ scope: cfg.scope, silent: silent, hint: o.hint || '' }).then(function (r) {
+            G.authorize({ scope: cfg.scope, silent: silent, hint: pick ? '' : (saved || o.hint || '') }).then(function (r) {
+              try { if (r.email) localStorage.setItem(akey, r.email); else if (pick) localStorage.removeItem(akey); } catch (e) {}
               cfg.callback({ access_token: r.accessToken, expires_in: r.expiresIn });
             }).catch(function (e) {
               var m = (e && e.message) || String(e);

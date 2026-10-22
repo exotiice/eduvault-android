@@ -63,8 +63,18 @@ public class TodayWidget extends AppWidgetProvider {
                         }
                     }
                     if (best != Long.MAX_VALUE) {
-                        long dd = (best - nowMs + 86399999L) / 86400000L;
-                        v.setTextViewText(R.id.hd, WidgetData.capitalize(date) + " · 🚨 " + (bn.length() > 0 ? bn + " " : "Exam ") + "J-" + dd);
+                        Calendar due = Calendar.getInstance();
+                        due.setTimeInMillis(best);
+                        Calendar a = (Calendar) now.clone(), b = (Calendar) due.clone();
+                        for (Calendar x : new Calendar[]{a, b}) {
+                            x.set(Calendar.HOUR_OF_DAY, 12);
+                            x.set(Calendar.MINUTE, 0);
+                            x.set(Calendar.SECOND, 0);
+                            x.set(Calendar.MILLISECOND, 0);
+                        }
+                        long dd = Math.round((b.getTimeInMillis() - a.getTimeInMillis()) / 86400000.0); // jours calendaires (0 = aujourd'hui)
+                        v.setTextViewText(R.id.hd, WidgetData.capitalize(date) + " · 🚨 " + (bn.length() > 0 ? bn + " " : "Exam ")
+                                + (dd <= 0 ? "aujourd'hui" : "J-" + dd));
                     }
                 } catch (Exception ignored) {
                 }

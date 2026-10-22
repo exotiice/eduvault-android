@@ -25,7 +25,14 @@
   function gToken(scope) {
     var G = P('EduGoogle');
     if (!G) return Promise.reject(new Error('Connexion Google indisponible dans cette version'));
-    return G.authorize({ scope: scope }).catch(function (e) { throw new Error((e && e.message) || String(e)); });
+    // reconnexion automatique (lancement, jeton expiré) = SILENCIEUSE : aucune fenêtre Google. La fenêtre n'apparaît qu'après un vrai clic.
+    var silent = !(window.__evTap && Date.now() - window.__evTap < 2500);
+    var akey = 'evG_acc_' + String(scope || '').split(' ')[0];
+    var hint = LSget(akey) || LSget('ux_gdhint') || '';
+    return G.authorize({ scope: scope, silent: silent, hint: hint }).then(function (r) {
+      try { if (r && r.email) LSset(akey, r.email); } catch (e) {}
+      return r;
+    }).catch(function (e) { throw new Error((e && e.message) || String(e)); });
   }
   safe(function () {
     window.drvAuth = function () {
@@ -119,8 +126,8 @@
     var k = iso(date), dn = DAYS[(date.getDay() + 6) % 7], hol = isHol(k), wk = weekFor(date);
     return A.timetable.filter(function (c) {
       if (!ids.has(c.moduleId) || c.day !== dn) return false;
+      if (c.skip && c.skip.indexOf(k) >= 0) return false;   // séance non assurée ce jour-là (récurrente ou ponctuelle)
       if (c.date) return c.date === k;
-      if (c.skip && c.skip.indexOf(k) >= 0) return false;   // séance non assurée ce jour-là
       return !hol && (c.week === 'all' || c.week === wk);
     }).sort(function (a, b) { return a.startTime.localeCompare(b.startTime); });
   }
@@ -534,6 +541,8 @@
         var c = A.timetable.find(function (t) { return t.id === x.i; });
         if (!c) return;
         var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
+        if (x.k === 'abs' && x.d && (c.abs || []).indexOf(x.d) >= 0) return;       // déjà noté : pas de doublon
+        if (x.k === 'early' && x.d && c.early && c.early[x.d]) return;
         if (x.k === 'skip') {                       // « Pas cours » depuis la carte
           if (x.d && (c.skip || []).indexOf(x.d) < 0) c.skip = (c.skip || []).concat(x.d);
           nSkip++; return;

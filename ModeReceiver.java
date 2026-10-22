@@ -495,9 +495,9 @@ public class ModeReceiver extends BroadcastReceiver {
         b.setContentIntent(openNotes(c, it.id, it.day, 31));
         b.addAction(noteAction(c, it));
         b.addAction(silenced ? R.drawable.ic_act_bell : R.drawable.ic_act_mute, silenced ? "Sonnerie" : "Silence", self(c, "TOGGLE", 33));
-        b.addAction(R.drawable.ic_act_stop, "Pas cours", itemPi(c, "SKIP", it, 39));
-        b.addAction(R.drawable.ic_act_prev, "Absent", itemPi(c, "ABS", it, 40));
-        b.addAction(R.drawable.ic_act_next, "Sorti", itemPi(c, "LEAVE", it, 41));
+        b.addAction(R.drawable.ic_act_block, "Pas cours", itemPi(c, "SKIP", it, 39));
+        b.addAction(R.drawable.ic_act_person, "Absent", itemPi(c, "ABS", it, 40));
+        b.addAction(R.drawable.ic_act_exit, "Sorti", itemPi(c, "LEAVE", it, 41));
 
         try {
             if (session == null) session = new MediaSession(c, "EduVaultCours"); // réutilisée : pas de clignotement à chaque minute
