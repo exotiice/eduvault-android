@@ -115,6 +115,24 @@
   /* ---------- Google (Agenda) : faux google.accounts.oauth2 branché sur la connexion native ----------
      Le site appelle initTokenClient({scope, callback, error_callback}).requestAccessToken() ; gLib() considère
      la bibliothèque déjà chargée si window.google.accounts.oauth2 existe : le vrai script Google n'est jamais chargé. */
+  /* Le site charge le VRAI script Google (accounts.google.com/gsi/client) pour Drive, ce qui REMPLACE le faux google.accounts.oauth2
+     ci-dessous par la version web (fenêtre « Sign in with Google » à chaque lancement). On neutralise ce script : il « se charge »
+     (onload part) mais ne fait rien, donc seul notre branchement sur la connexion native reste en place. */
+  try {
+    var GSI = /accounts\.google\.com\/gsi\/client/i, EMPTY = 'data:text/javascript;charset=utf-8,%2F%2F%20neutralise';
+    var sd = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+    if (sd && sd.set) {
+      Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+        configurable: true, enumerable: sd.enumerable, get: sd.get,
+        set: function (v) { sd.set.call(this, GSI.test(String(v)) ? EMPTY : v); }
+      });
+    }
+    var sa = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (k, v) {
+      if (this instanceof HTMLScriptElement && String(k).toLowerCase() === 'src' && GSI.test(String(v))) v = EMPTY;
+      return sa.call(this, k, v);
+    };
+  } catch (e) {}
   try {
     document.addEventListener('click', function (e) {
       try {
