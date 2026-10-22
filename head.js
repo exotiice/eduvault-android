@@ -144,7 +144,7 @@
   try {
     window.google = window.google || {};
     window.google.accounts = window.google.accounts || {};
-    window.google.accounts.oauth2 = {
+    var SHIM = {
       initTokenClient: function (cfg) {
         return {
           requestAccessToken: function (o) {
@@ -163,6 +163,21 @@
         };
       },
       revoke: function (t, done) { try { done && done(); } catch (e) {} }
+    };
+    var ACC = window.google.accounts;
+    /* verrouillé : même si un script Google se charge quand même, il ne peut plus remplacer notre connexion native */
+    Object.defineProperty(ACC, 'oauth2', { configurable: false, enumerable: true, get: function () { return SHIM; }, set: function () {} });
+    Object.defineProperty(window.google, 'accounts', {
+      configurable: false, enumerable: true, get: function () { return ACC; },
+      set: function (v) { try { for (var k in v) if (k !== 'oauth2') ACC[k] = v[k]; } catch (e) {} }
+    });
+  } catch (e) {}
+  /* plus jamais de page accounts.google.com dans le navigateur (l'erreur 400) : toute connexion passe par la fenêtre native */
+  try {
+    var wo = window.open;
+    window.open = function (u) {
+      try { if (/^(https?:)?\/\/accounts\.google\.com/i.test(String(u || ''))) return null; } catch (e) {}
+      return wo.apply(window, arguments);
     };
   } catch (e) {}
 })();
