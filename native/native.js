@@ -25,7 +25,14 @@
   function gToken(scope) {
     var G = P('EduGoogle');
     if (!G) return Promise.reject(new Error('Connexion Google indisponible dans cette version'));
-    return G.authorize({ scope: scope }).catch(function (e) { throw new Error((e && e.message) || String(e)); });
+    // reconnexion automatique (lancement, jeton expiré) = SILENCIEUSE : aucune fenêtre Google. La fenêtre n'apparaît qu'après un vrai clic.
+    var silent = !(window.__evTap && Date.now() - window.__evTap < 2500);
+    var akey = 'evG_acc_' + String(scope || '').split(' ')[0];
+    var hint = LSget(akey) || LSget('ux_gdhint') || '';
+    return G.authorize({ scope: scope, silent: silent, hint: hint }).then(function (r) {
+      try { if (r && r.email) LSset(akey, r.email); } catch (e) {}
+      return r;
+    }).catch(function (e) { throw new Error((e && e.message) || String(e)); });
   }
   safe(function () {
     window.drvAuth = function () {
@@ -119,6 +126,7 @@
     var k = iso(date), dn = DAYS[(date.getDay() + 6) % 7], hol = isHol(k), wk = weekFor(date);
     return A.timetable.filter(function (c) {
       if (!ids.has(c.moduleId) || c.day !== dn) return false;
+      if (c.skip && c.skip.indexOf(k) >= 0) return false;   // séance non assurée ce jour-là (récurrente ou ponctuelle)
       if (c.date) return c.date === k;
       return !hol && (c.week === 'all' || c.week === wk);
     }).sort(function (a, b) { return a.startTime.localeCompare(b.startTime); });
@@ -139,13 +147,15 @@
     return out;
   }
   function buildSummary() {
-    var ids = curIds(), now = new Date(), days = {}, hol = {};
+    var ids = curIds(), now = new Date(), days = {}, hol = {}, abs = {};
     for (var i = 0; i < 8; i++) {
       var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i), k = iso(d);
       if (isHol(k)) hol[k] = 1;
       days[k] = sessionsFor(d, ids).map(function (c) {
         var mo = A.modules.find(function (m) { return m.id === c.moduleId; });
-        return { i: c.id, s: c.startTime, e: c.endTime, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '' };
+        var le = c.early && c.early[k];   // « Sorti tôt » : l'heure réelle de fin remplace l'heure prévue
+        var endT = le && le > c.startTime && le < c.endTime ? le : c.endTime;
+        return { i: c.id, s: c.startTime, e: endT, n: modName(c.moduleId), r: c.room || '', c: (mo && mo.color) || '', ty: String(c.typ || '').toUpperCase(), p: c.prof || '', ab: abs[c.moduleId] === undefined ? (abs[c.moduleId] = absCount(c.moduleId)) : abs[c.moduleId] };
       });
     }
     var tasks = A.tasks.filter(function (t) {
@@ -503,23 +513,70 @@
     }).catch(function () {});
   }
   /* bilans reçus depuis les notifications → on les écrit dans les notes du cours */
+  /* absences d'un module (compteur affiché sur la carte) */
+  function absCount(mid) {
+    var n = 0;
+    (A.timetable || []).forEach(function (c) { if (c.moduleId === mid && c.abs) n += c.abs.length; });
+    return n;
+  }
+  /* prochaine date (> aujourd'hui) d'une séance du même module : pour l'échéance d'un devoir noté depuis la carte */
+  function nextDueFor(c) {
+    var d0 = new Date(), ids = new Set([c.moduleId]);
+    for (var i = 1; i <= 21; i++) {
+      var d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i), l = sessionsFor(d, ids);
+      if (l.length) return iso(d) + 'T' + (l[0].startTime || '08:00');
+    }
+    return iso(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 1)) + 'T18:00';
+  }
   function drainRates() {
     var W = P('EduWidget');
     if (!W || !W.getRates) return;
+    // données pas encore chargées : on ne vide pas la file native (les actions de la carte attendent le prochain essai)
+    if (!A || !A.settings || !A.settings.level || !(A.timetable || []).length) return;
     W.getRates().then(function (r) {
       var list = (r && r.rates) || [];
-      if (!list.length || !A.settings.level) return;
+      if (!list.length) return;
+      var nNote = 0, nSkip = 0, nAbs = 0, nTask = 0, nEarly = 0;
       list.forEach(function (x) {
         var c = A.timetable.find(function (t) { return t.id === x.i; });
         if (!c) return;
+        var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
+        if (x.k === 'abs' && x.d && (c.abs || []).indexOf(x.d) >= 0) return;       // déjà noté : pas de doublon
+        if (x.k === 'early' && x.d && c.early && c.early[x.d]) return;
+        if (x.k === 'skip') {                       // « Pas cours » depuis la carte
+          if (x.d && (c.skip || []).indexOf(x.d) < 0) c.skip = (c.skip || []).concat(x.d);
+          nSkip++; return;
+        }
         var n = A.notes.find(function (z) { return z.classId === x.i; });
         if (!n) { n = { classId: x.i, text: '', photos: [] }; A.notes.push(n); }
-        var dd = String(x.d || '').split('-'), dm = dd.length === 3 ? dd[2] + '/' + dd[1] : '';
-        n.text = (n.text ? n.text + '\n' : '') + '📊 ' + dm + ' · ' + Lg('Compris', 'Understood', 'فهم') + ' ' + x.p + ' %';
+        var line;
+        if (x.k === 'abs') {                        // « Absent » depuis la carte
+          if (x.d && (c.abs || []).indexOf(x.d) < 0) c.abs = (c.abs || []).concat(x.d);
+          line = '✋ ' + dm + ' · ' + Lg('Absent', 'Absent', 'غائب'); nAbs++;
+        } else if (x.k === 'early') {               // « Sorti » depuis la carte
+          var eh = x.e ? new Date(x.e) : null, em = eh ? ('0' + eh.getHours()).slice(-2) + ':' + ('0' + eh.getMinutes()).slice(-2) : '';
+          if (x.d && em) { c.early = c.early || {}; c.early[x.d] = em; }
+          line = '🚪 ' + dm + ' · ' + Lg('Sorti à ', 'Left at ', 'خرجت على ') + em + ' (' + Lg('prévu ', 'planned ', 'المقرر ') + c.endTime + ')'; nEarly++;
+        } else if (x.t && /^\s*(devoir|dv|hw|!)\s*[:\-]?\s*\S/i.test(x.t)) {   // « devoir … » => échéance
+          var title = String(x.t).replace(/^\s*(devoir|dv|hw|!)\s*[:\-]?\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 120);
+          A.tasks.push({ id: uid('t'), moduleId: c.moduleId, type: 'homework', title: title, dueDate: nextDueFor(c), completed: false });
+          line = '📝 ' + dm + ' · ' + Lg('Devoir : ', 'Homework: ', 'واجب: ') + title; nTask++;
+        } else if (x.t) {
+          line = '📝 ' + dm + ' · ' + String(x.t).replace(/\s+/g, ' ').trim(); nNote++;
+        } else {
+          line = '📊 ' + dm + ' · ' + Lg('Compris', 'Understood', 'فهم') + ' ' + x.p + ' %'; nNote++;
+        }
+        n.text = (n.text ? n.text + '\n' : '') + line;
         n.date = new Date().toISOString();
       });
       try { upd(); } catch (e) {}
-      toast('📊 ' + Lg('Bilan enregistré', 'Check-in saved', 'تم حفظ التقييم') + ' ✔', 'ok');
+      var msg = [];
+      if (nNote) msg.push('📝 ' + nNote);
+      if (nTask) msg.push('📌 ' + nTask);
+      if (nAbs) msg.push('✋ ' + nAbs);
+      if (nEarly) msg.push('🚪 ' + nEarly);
+      if (nSkip) msg.push('🚫 ' + nSkip);
+      if (msg.length) toast(msg.join(' · ') + ' ✔ ' + Lg('enregistré', 'saved', 'تم الحفظ'), 'ok');
       sched();
     }).catch(function () {});
   }
@@ -530,8 +587,34 @@
     if (App && App.addListener) App.addListener('appStateChange', function (s) { if (s && s.isActive) setTimeout(drainRates, 600); });
     if (W && W.addListener) W.addListener('widgetAction', function () { setTimeout(drainRates, 400); });
     setTimeout(drainRates, 2500);
+    setTimeout(drainRates, 9000);
+    /* tuile « Mode cours » dans la page Réglages (à côté de « Compte & sécurité »), comme les autres tuiles du site */
+    var BUILD = '23.10-c';   // timbre de version : visible en bas de Réglages, pour vérifier quelle version est installée
+    function stamp(v) {
+      var els = v.querySelectorAll('small, p, div, span'), f = null;
+      for (var i = 0; i < els.length; i++) {
+        if (!els[i].children.length && /^EduVault v\d+\s*$/.test((els[i].textContent || '').trim())) { f = els[i]; break; }
+      }
+      if (f && !f.dataset.nb) { f.dataset.nb = '1'; f.textContent = f.textContent.trim() + ' · 📱 ' + BUILD; }
+    }
+    function modeTile() {
+      var v = document.getElementById('v');
+      if (!v) return;
+      stamp(v);
+      var acct = v.querySelector('.tiles .tile[data-a="acct"]');
+      if (!acct || v.querySelector('.tiles .tile[data-a="modeDlg"]')) return;
+      var c = acct.cloneNode(true), ic = c.firstElementChild;
+      c.dataset.a = 'modeDlg'; c.removeAttribute('data-i');
+      [c, ic].forEach(function (e) { if (e) { e.style.setProperty('--c1', '#10b981'); e.style.setProperty('--c2', '#059669'); } });
+      if (ic && ic !== c.querySelector('span:last-child')) ic.textContent = '🎓';
+      var b = c.querySelector('b'), sm = c.querySelector('small');
+      if (b) b.textContent = Lg('Mode cours', 'Class mode', 'وضع الحصة');
+      if (sm) sm.textContent = Lg('Silence, carte, réveil, notes', 'Silence, card, wake-up, notes', 'صمت، بطاقة، منبه، ملاحظات');
+      acct.insertAdjacentElement('afterend', c);
+    }
     /* bouton d'accès dans les réglages du site */
     new MutationObserver(function () {
+      modeTile();
       var b = document.querySelector('[data-a="resHub"]');
       if (b && !document.querySelector('[data-a="modeDlg"]')) {
         var n = document.createElement('button');

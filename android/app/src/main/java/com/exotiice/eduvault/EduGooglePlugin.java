@@ -1,5 +1,6 @@
 package com.exotiice.eduvault;
 
+import android.accounts.Account;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Intent;
@@ -22,7 +23,9 @@ import java.util.List;
 /**
  * Connexion Google native (Drive, Agenda) : Google bloque OAuth dans un WebView,
  * on passe donc par l'API Authorization de Google Play Services.
- * authorize({scope}) -> { accessToken, expiresIn }. Silencieux si l'accès a déjà été accordé.
+ * authorize({scope, silent, hint}) -> { accessToken, expiresIn }. Silencieux si l'accès a déjà été accordé.
+ * silent=true : n'ouvre JAMAIS de fenêtre Google ; si une interaction serait nécessaire, rejette « interaction_required »
+ * (reconnexion automatique au lancement de l'appli). hint = e-mail du compte Google à utiliser.
  * hasFirebase() -> { value } : vrai si google-services.json était présent au build (push FCM).
  */
 @CapacitorPlugin(name = "EduGoogle")
@@ -41,10 +44,15 @@ public class EduGooglePlugin extends Plugin {
         try {
             List<Scope> scopes = new ArrayList<>();
             for (String s : scope.split(" ")) if (s.length() > 0) scopes.add(new Scope(s));
-            AuthorizationRequest req = AuthorizationRequest.builder().setRequestedScopes(scopes).build();
+            final boolean silent = Boolean.TRUE.equals(call.getBoolean("silent", false));
+            String hint = call.getString("hint");
+            AuthorizationRequest.Builder rb = AuthorizationRequest.builder().setRequestedScopes(scopes);
+            if (hint != null && hint.contains("@")) rb.setAccount(new Account(hint, "com.google"));
+            AuthorizationRequest req = rb.build();
             Identity.getAuthorizationClient(getActivity()).authorize(req)
                 .addOnSuccessListener(result -> {
                     if (result.hasResolution()) {
+                        if (silent) { call.reject("interaction_required"); return; }
                         try {
                             PendingIntent pi = result.getPendingIntent();
                             pending = call;
@@ -97,6 +105,11 @@ public class EduGooglePlugin extends Plugin {
         JSObject o = new JSObject();
         o.put("accessToken", token);
         o.put("expiresIn", 3300); // l'API ne donne pas l'expiration : les jetons Google durent ~1 h
+        try { // compte utilisé (si Google le donne) : mémorisé côté site pour la reconnexion silencieuse
+            com.google.android.gms.auth.api.signin.GoogleSignInAccount a = r.toGoogleSignInAccount();
+            if (a != null && a.getEmail() != null) o.put("email", a.getEmail());
+        } catch (Exception ignored) {
+        }
         call.resolve(o);
     }
 

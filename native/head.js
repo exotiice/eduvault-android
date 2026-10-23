@@ -115,25 +115,75 @@
   /* ---------- Google (Agenda) : faux google.accounts.oauth2 branché sur la connexion native ----------
      Le site appelle initTokenClient({scope, callback, error_callback}).requestAccessToken() ; gLib() considère
      la bibliothèque déjà chargée si window.google.accounts.oauth2 existe : le vrai script Google n'est jamais chargé. */
+  /* Le site charge le VRAI script Google (accounts.google.com/gsi/client) pour Drive, ce qui REMPLACE le faux google.accounts.oauth2
+     ci-dessous par la version web (fenêtre « Sign in with Google » à chaque lancement). On neutralise ce script : il « se charge »
+     (onload part) mais ne fait rien, donc seul notre branchement sur la connexion native reste en place. */
+  try {
+    var GSI = /accounts\.google\.com\/gsi\/client/i, EMPTY = 'data:text/javascript;charset=utf-8,%2F%2F%20neutralise';
+    var sd = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+    if (sd && sd.set) {
+      Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+        configurable: true, enumerable: sd.enumerable, get: sd.get,
+        set: function (v) { sd.set.call(this, GSI.test(String(v)) ? EMPTY : v); }
+      });
+    }
+    var sa = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (k, v) {
+      if (this instanceof HTMLScriptElement && String(k).toLowerCase() === 'src' && GSI.test(String(v))) v = EMPTY;
+      return sa.call(this, k, v);
+    };
+  } catch (e) {}
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        // tout vrai clic sur un bouton = action voulue par l'utilisateur (la reconnexion automatique, elle, part au « pointerup » avant le clic)
+        var t = e.target && e.target.closest && e.target.closest('[data-a],button,a,label,summary');
+        if (t) window.__evTap = Date.now();
+      } catch (x) {}
+    }, true);
+  } catch (e) {}
   try {
     window.google = window.google || {};
     window.google.accounts = window.google.accounts || {};
-    window.google.accounts.oauth2 = {
+    var SHIM = {
       initTokenClient: function (cfg) {
         return {
-          requestAccessToken: function () {
+          requestAccessToken: function (o) {
+            o = o || {};
+            // reconnexion automatique (au lancement / au premier toucher) = silencieuse ; fenêtre Google seulement après un clic explicite sur ☁️ / Google Agenda
+            var pick = o.prompt === 'select_account';   // « choisir un autre compte » (ex. compte d'école pour Classroom) : fenêtre native avec la liste des comptes
+            var silent = !pick && !(window.__evTap && Date.now() - window.__evTap < 2500);
+            // un compte mémorisé par groupe de permissions (Drive, Agenda, Classroom peuvent utiliser des comptes différents)
+            var akey = 'evG_acc_' + String(cfg.scope || '').split(' ')[0], saved = '';
+            try { saved = pick ? '' : (localStorage.getItem(akey) || ''); } catch (e) {}
             var G; try { G = (C.Plugins && C.Plugins.EduGoogle) || (C.registerPlugin && C.registerPlugin('EduGoogle')); } catch (e) {}
             if (!G) { cfg.error_callback && cfg.error_callback({ type: 'popup_failed_to_open' }); return; }
-            G.authorize({ scope: cfg.scope }).then(function (r) {
+            G.authorize({ scope: cfg.scope, silent: silent, hint: pick ? '' : (saved || o.hint || '') }).then(function (r) {
+              try { if (r.email) localStorage.setItem(akey, r.email); else if (pick) localStorage.removeItem(akey); } catch (e) {}
               cfg.callback({ access_token: r.accessToken, expires_in: r.expiresIn });
             }).catch(function (e) {
               var m = (e && e.message) || String(e);
-              cfg.callback({ error: /access_denied/.test(m) ? 'access_denied' : m });
+              cfg.callback({ error: /access_denied/.test(m) ? 'access_denied' : m });   // « interaction_required » : le site réessaiera au clic sur ☁️
             });
           }
         };
       },
       revoke: function (t, done) { try { done && done(); } catch (e) {} }
+    };
+    var ACC = window.google.accounts;
+    /* verrouillé : même si un script Google se charge quand même, il ne peut plus remplacer notre connexion native */
+    Object.defineProperty(ACC, 'oauth2', { configurable: false, enumerable: true, get: function () { return SHIM; }, set: function () {} });
+    Object.defineProperty(window.google, 'accounts', {
+      configurable: false, enumerable: true, get: function () { return ACC; },
+      set: function (v) { try { for (var k in v) if (k !== 'oauth2') ACC[k] = v[k]; } catch (e) {} }
+    });
+  } catch (e) {}
+  /* plus jamais de page accounts.google.com dans le navigateur (l'erreur 400) : toute connexion passe par la fenêtre native */
+  try {
+    var wo = window.open;
+    window.open = function (u) {
+      try { if (/^(https?:)?\/\/accounts\.google\.com/i.test(String(u || ''))) return null; } catch (e) {}
+      return wo.apply(window, arguments);
     };
   } catch (e) {}
 })();
