@@ -589,9 +589,18 @@
     setTimeout(drainRates, 2500);
     setTimeout(drainRates, 9000);
     /* tuile « Mode cours » dans la page Réglages (à côté de « Compte & sécurité »), comme les autres tuiles du site */
+    var BUILD = '23.10-c';   // timbre de version : visible en bas de Réglages, pour vérifier quelle version est installée
+    function stamp(v) {
+      var els = v.querySelectorAll('small, p, div, span'), f = null;
+      for (var i = 0; i < els.length; i++) {
+        if (!els[i].children.length && /^EduVault v\d+\s*$/.test((els[i].textContent || '').trim())) { f = els[i]; break; }
+      }
+      if (f && !f.dataset.nb) { f.dataset.nb = '1'; f.textContent = f.textContent.trim() + ' · 📱 ' + BUILD; }
+    }
     function modeTile() {
       var v = document.getElementById('v');
       if (!v) return;
+      stamp(v);
       var acct = v.querySelector('.tiles .tile[data-a="acct"]');
       if (!acct || v.querySelector('.tiles .tile[data-a="modeDlg"]')) return;
       var c = acct.cloneNode(true), ic = c.firstElementChild;
