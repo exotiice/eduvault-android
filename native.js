@@ -588,8 +588,24 @@
     if (W && W.addListener) W.addListener('widgetAction', function () { setTimeout(drainRates, 400); });
     setTimeout(drainRates, 2500);
     setTimeout(drainRates, 9000);
+    /* tuile « Mode cours » dans la page Réglages (à côté de « Compte & sécurité »), comme les autres tuiles du site */
+    function modeTile() {
+      var v = document.getElementById('v');
+      if (!v) return;
+      var acct = v.querySelector('.tiles .tile[data-a="acct"]');
+      if (!acct || v.querySelector('.tiles .tile[data-a="modeDlg"]')) return;
+      var c = acct.cloneNode(true), ic = c.firstElementChild;
+      c.dataset.a = 'modeDlg'; c.removeAttribute('data-i');
+      [c, ic].forEach(function (e) { if (e) { e.style.setProperty('--c1', '#10b981'); e.style.setProperty('--c2', '#059669'); } });
+      if (ic && ic !== c.querySelector('span:last-child')) ic.textContent = '🎓';
+      var b = c.querySelector('b'), sm = c.querySelector('small');
+      if (b) b.textContent = Lg('Mode cours', 'Class mode', 'وضع الحصة');
+      if (sm) sm.textContent = Lg('Silence, carte, réveil, notes', 'Silence, card, wake-up, notes', 'صمت، بطاقة، منبه، ملاحظات');
+      acct.insertAdjacentElement('afterend', c);
+    }
     /* bouton d'accès dans les réglages du site */
     new MutationObserver(function () {
+      modeTile();
       var b = document.querySelector('[data-a="resHub"]');
       if (b && !document.querySelector('[data-a="modeDlg"]')) {
         var n = document.createElement('button');
